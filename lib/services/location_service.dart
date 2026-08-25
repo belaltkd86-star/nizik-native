@@ -1,28 +1,54 @@
 import 'package:geolocator/geolocator.dart';
 
 class LocationService {
-  static Future<Position?> getCurrentLocation() async {
+  static Future<LocationPermission> requestPermission() async {
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
 
     if (!serviceEnabled) {
-      return null;
+      await Geolocator.openLocationSettings();
+      throw Exception(
+        'Location Services ـی ئامێرەکە داخراوە. تکایە چالاکی بکە.',
+      );
     }
 
-    var permission = await Geolocator.checkPermission();
+    LocationPermission permission = await Geolocator.checkPermission();
 
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
     }
 
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) {
-      return null;
+    if (permission == LocationPermission.denied) {
+      throw Exception(
+        'ڕێگەپێدانی شوێن نەدرا. تکایە ڕێگە بە نزیک بدە.',
+      );
     }
 
-    return Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-      ),
+    if (permission == LocationPermission.deniedForever) {
+      await Geolocator.openAppSettings();
+
+      throw Exception(
+        'ڕێگەپێدانی شوێن بە هەمیشەیی داخراوە. لە Settings چالاکی بکە.',
+      );
+    }
+
+    return permission;
+  }
+
+  static Future<Position> getCurrentPosition() async {
+    await requestPermission();
+
+    const locationSettings = LocationSettings(
+      accuracy: LocationAccuracy.high,
+      timeLimit: Duration(seconds: 20),
     );
+
+    return Geolocator.getCurrentPosition(
+      locationSettings: locationSettings,
+    );
+  }
+
+  // بۆ compatibility لەگەڵ screen ـە کۆنەکان
+  static Future<Position> getCurrentLocation() async {
+    return getCurrentPosition();
   }
 }

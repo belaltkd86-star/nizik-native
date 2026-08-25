@@ -1,23 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../models/shop.dart';
-import '../services/local_store_service.dart';
-import 'shop_profile_sheet.dart';
-
-const _green = Color(0xFF059669);
-const _softGreen = Color(0xFFECFDF5);
-const _ink = Color(0xFF0F172A);
-const _muted = Color(0xFF64748B);
-const _background = Color(0xFFF8FAFC);
-const _line = Color(0xFFE2E8F0);
+import '../services/favorites_service.dart';
+import '../services/shop_service.dart';
+import '../widgets/shop_card.dart';
+import 'shop_detail_screen.dart';
 
 class FavoritesScreen extends StatefulWidget {
-  final int refreshSignal;
-
-  const FavoritesScreen({
-    super.key,
-    this.refreshSignal = 0,
-  });
+  const FavoritesScreen({super.key});
 
   @override
   State<FavoritesScreen> createState() =>
@@ -26,11 +16,9 @@ class FavoritesScreen extends StatefulWidget {
 
 class _FavoritesScreenState
     extends State<FavoritesScreen> {
-  final LocalStoreService _store =
-      LocalStoreService.instance;
-
-  List<Shop> _shops = [];
+  List<Shop> _allShops = [];
   bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
@@ -38,42 +26,40 @@ class _FavoritesScreenState
     _load();
   }
 
-  @override
-  void didUpdateWidget(
-    covariant FavoritesScreen oldWidget,
-  ) {
-    super.didUpdateWidget(oldWidget);
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
 
-    if (oldWidget.refreshSignal !=
-        widget.refreshSignal) {
-      _load();
+    try {
+      final shops = await ShopService.fetchShops();
+
+      if (!mounted) return;
+
+      setState(() {
+        _allShops = shops;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _loading = false;
+        _error =
+            e.toString().replaceFirst('Exception: ', '');
+      });
     }
   }
 
-  Future<void> _load() async {
-    final shops = await _store.getFavorites();
-
-    if (!mounted) return;
-
-    setState(() {
-      _shops = shops;
-      _loading = false;
-    });
-  }
-
-  Future<void> _remove(Shop shop) async {
-    await _store.toggleFavorite(shop);
-    await _load();
-  }
-
-  Future<void> _open(Shop shop) async {
-    await showShopProfileSheet(
-      context,
-      shop.slug,
-      sourceShop: shop,
+  void _openShop(Shop shop) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ShopDetailScreen(
+          slug: shop.slug,
+        ),
+      ),
     );
-
-    await _load();
   }
 
   @override
@@ -81,317 +67,134 @@ class _FavoritesScreenState
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: _background,
-        body: SafeArea(
-          child: RefreshIndicator(
-            color: _green,
-            onRefresh: _load,
-            child: CustomScrollView(
-              physics:
-                  const AlwaysScrollableScrollPhysics(),
-              slivers: [
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.fromLTRB(
-                      18,
-                      18,
-                      18,
-                      14,
+        backgroundColor: const Color(0xFFF6F8F6),
+        appBar: AppBar(
+          title: const Text(
+            'دڵخوازەکان',
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          centerTitle: true,
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.white,
+        ),
+        body: RefreshIndicator(
+          onRefresh: _load,
+          child: ValueListenableBuilder<Set<String>>(
+            valueListenable: FavoritesService.notifier,
+            builder: (context, favorites, _) {
+              if (_loading) {
+                return ListView(
+                  physics:
+                      AlwaysScrollableScrollPhysics(),
+                  children: [
+                    SizedBox(height: 220),
+                    Center(
+                      child: CircularProgressIndicator(),
                     ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 46,
-                          height: 46,
-                          decoration: BoxDecoration(
-                            color: _softGreen,
-                            borderRadius:
-                                BorderRadius.circular(
-                              15,
+                  ],
+                );
+              }
+
+              if (_error != null) {
+                return ListView(
+                  physics:
+                      const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(20),
+                  children: [
+                    const SizedBox(height: 100),
+                    Center(
+                      child: Column(
+                        children: [
+                          const Icon(
+                            Icons.cloud_off_rounded,
+                            size: 50,
+                            color: Colors.black38,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            _error!,
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 14),
+                          FilledButton.icon(
+                            onPressed: _load,
+                            icon: const Icon(
+                              Icons.refresh_rounded,
+                            ),
+                            label: const Text(
+                              'دووبارە هەوڵ بدەوە',
                             ),
                           ),
-                          child: const Icon(
-                            Icons.favorite_rounded,
-                            color: Colors.red,
-                          ),
-                        ),
-                        const SizedBox(width: 11),
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment:
-                                CrossAxisAlignment
-                                    .start,
-                            children: [
-                              Text(
-                                'دڵخوازەکان',
-                                style: TextStyle(
-                                  color: _ink,
-                                  fontSize: 20,
-                                  fontWeight:
-                                      FontWeight
-                                          .w900,
-                                ),
-                              ),
-                              SizedBox(height: 4),
-                              Text(
-                                'دوکانە هەڵبژێردراوەکانت',
-                                style: TextStyle(
-                                  color: _muted,
-                                  fontSize: 10,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                if (_loading)
-                  const SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: Center(
-                      child:
-                          CircularProgressIndicator(
-                        color: _green,
+                        ],
                       ),
                     ),
-                  )
-                else if (_shops.isEmpty)
-                  const SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: _EmptyFavorites(),
-                  )
-                else
-                  SliverPadding(
-                    padding:
-                        const EdgeInsets.fromLTRB(
-                      16,
-                      4,
-                      16,
-                      100,
-                    ),
-                    sliver: SliverList(
-                      delegate:
-                          SliverChildBuilderDelegate(
-                        (context, index) {
-                          if (index.isOdd) {
-                            return const SizedBox(
-                              height: 10,
-                            );
-                          }
-
-                          final shopIndex =
-                              index ~/ 2;
-                          final shop =
-                              _shops[shopIndex];
-
-                          return _FavoriteCard(
-                            shop: shop,
-                            onTap: () =>
-                                _open(shop),
-                            onRemove: () =>
-                                _remove(shop),
-                          );
-                        },
-                        childCount:
-                            _shops.length * 2 - 1,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FavoriteCard extends StatelessWidget {
-  final Shop shop;
-  final VoidCallback onTap;
-  final VoidCallback onRemove;
-
-  const _FavoriteCard({
-    required this.shop,
-    required this.onTap,
-    required this.onRemove,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final logo =
-        normalizeNizikUrl(shop.logoUrl);
-
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0, end: 1),
-      duration: const Duration(milliseconds: 360),
-      curve: Curves.easeOutCubic,
-      builder: (context, value, child) {
-        return Opacity(
-          opacity: value,
-          child: Transform.translate(
-            offset: Offset(0, 10 * (1 - value)),
-            child: child,
-          ),
-        );
-      },
-      child: Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(22),
-        child: Container(
-          padding: const EdgeInsets.all(13),
-          decoration: BoxDecoration(
-            borderRadius:
-                BorderRadius.circular(22),
-            border: Border.all(
-              color: _line,
-            ),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 62,
-                height: 62,
-                clipBehavior: Clip.antiAlias,
-                decoration: BoxDecoration(
-                  color: _softGreen,
-                  borderRadius:
-                      BorderRadius.circular(18),
-                ),
-                child: logo.isEmpty
-                    ? const Icon(
-                        Icons
-                            .storefront_rounded,
-                        color: _green,
-                        size: 28,
-                      )
-                    : Image.network(
-                        logo,
-                        fit: BoxFit.cover,
-                        errorBuilder:
-                            (_, __, ___) {
-                          return const Icon(
-                            Icons
-                                .storefront_rounded,
-                            color: _green,
-                            size: 28,
-                          );
-                        },
-                      ),
-              ),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      shop.name,
-                      maxLines: 1,
-                      overflow:
-                          TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _ink,
-                        fontSize: 13,
-                        fontWeight:
-                            FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      shop.location,
-                      maxLines: 1,
-                      overflow:
-                          TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _muted,
-                        fontSize: 9,
-                      ),
-                    ),
-                    if (shop.bio.isNotEmpty) ...[
-                      const SizedBox(height: 5),
-                      Text(
-                        shop.bio,
-                        maxLines: 1,
-                        overflow:
-                            TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: _muted,
-                          fontSize: 9,
-                        ),
-                      ),
-                    ],
                   ],
-                ),
-              ),
-              IconButton(
-                onPressed: onRemove,
-                tooltip: 'لابردن لە دڵخوازەکان',
-                icon: const Icon(
-                  Icons.favorite_rounded,
-                  color: Colors.red,
-                ),
-              ),
-            ],
+                );
+              }
+
+              final favoriteShops = _allShops
+                  .where(
+                    (shop) =>
+                        favorites.contains(shop.slug),
+                  )
+                  .toList();
+
+              if (favoriteShops.isEmpty) {
+                return ListView(
+                  physics:
+                      AlwaysScrollableScrollPhysics(),
+                  padding: EdgeInsets.all(24),
+                  children: [
+                    SizedBox(height: 120),
+                    Icon(
+                      Icons.favorite_border_rounded,
+                      size: 68,
+                      color: Colors.black26,
+                    ),
+                    SizedBox(height: 14),
+                    Text(
+                      'هێشتا هیچ دووکانێکت نەخستووەتە دڵخوازەکان',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                );
+              }
+
+              return ListView(
+                physics:
+                    const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Text(
+                    '${favoriteShops.length} دووکان',
+                    style: const TextStyle(
+                      color: Colors.black54,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ...favoriteShops.map(
+                    (shop) => ShopCard(
+                      shop: shop,
+                      isFavorite: true,
+                      onFavoriteTap: () async {
+                        await FavoritesService.remove(
+                          shop.slug,
+                        );
+                      },
+                      onTap: () => _openShop(shop),
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
-        ),
-      ),
-    ),
-  );
-  }
-}
-
-class _EmptyFavorites extends StatelessWidget {
-  const _EmptyFavorites();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 84,
-              height: 84,
-              decoration: const BoxDecoration(
-                color: _softGreen,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.favorite_border_rounded,
-                color: _green,
-                size: 38,
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'هێشتا هیچ دڵخوازێکت نییە',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: _ink,
-                fontSize: 16,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 7),
-            const Text(
-              'لەسەر دڵی دوکانەکان کلیک بکە تا لێرە هەڵبگیرێن.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: _muted,
-                fontSize: 10,
-                height: 1.7,
-              ),
-            ),
-          ],
         ),
       ),
     );

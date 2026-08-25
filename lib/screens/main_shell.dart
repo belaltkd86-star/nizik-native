@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../theme/nizik_theme.dart';
+import 'about_screen.dart';
 import 'favorites_screen.dart';
 import 'home_screen.dart';
-import 'map_screen.dart';
+import 'market_screen.dart';
+import 'shop_map_screen.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -14,130 +15,72 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _index = 0;
-  int _favoritesRefresh = 0;
 
-  void _selectTab(int index) {
-    if (_index == index) return;
-
-    setState(() {
-      _index = index;
-
-      if (index == 2) {
-        _favoritesRefresh++;
-      }
-    });
-  }
-
-  Widget _animatedPage({
-    required int index,
-    required Widget child,
-  }) {
-    final active = _index == index;
-
-    return IgnorePointer(
-      ignoring: !active,
-      child: AnimatedOpacity(
-        opacity: active ? 1 : 0,
-        duration: NizikMotion.normal,
-        curve: NizikMotion.curve,
-        child: AnimatedScale(
-          scale: active ? 1 : 0.985,
-          duration: NizikMotion.normal,
-          curve: NizikMotion.curve,
-          child: Offstage(
-            offstage: !active,
-            child: child,
-          ),
-        ),
-      ),
-    );
+  void _goTo(int index) {
+    setState(() => _index = index);
   }
 
   @override
   Widget build(BuildContext context) {
+    final pages = <Widget>[
+      HomeScreen(
+        onOpenMarket: () => _goTo(2),
+      ),
+      const ShopMapScreen(),
+      const MarketScreen(),
+      const FavoritesScreen(),
+      const AboutScreen(),
+    ];
+
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        body: Stack(
-          fit: StackFit.expand,
-          children: [
-            _animatedPage(
-              index: 0,
-              child: HomeScreen(
-                onOpenMap: () {
-                  _selectTab(1);
-                },
-              ),
+        body: IndexedStack(
+          index: _index,
+          children: pages,
+        ),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: _index,
+          onDestinationSelected: _goTo,
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home_rounded),
+              label: 'سەرەکی',
             ),
-            _animatedPage(
-              index: 1,
-              child: const MapScreen(
-                embedded: true,
-              ),
+            NavigationDestination(
+              icon: Icon(Icons.map_outlined),
+              selectedIcon: Icon(Icons.map_rounded),
+              label: 'نەخشە',
             ),
-            _animatedPage(
-              index: 2,
-              child: FavoritesScreen(
-                refreshSignal: _favoritesRefresh,
+            NavigationDestination(
+              icon: Icon(
+                Icons.shopping_bag_outlined,
               ),
+              selectedIcon: Icon(
+                Icons.shopping_bag_rounded,
+              ),
+              label: 'بازاڕ',
+            ),
+            NavigationDestination(
+              icon: Icon(
+                Icons.favorite_border_rounded,
+              ),
+              selectedIcon: Icon(
+                Icons.favorite_rounded,
+              ),
+              label: 'دڵخوازەکان',
+            ),
+            NavigationDestination(
+              icon: Icon(
+                Icons.info_outline_rounded,
+              ),
+              selectedIcon: Icon(
+                Icons.info_rounded,
+              ),
+              label: 'دەربارە',
             ),
           ],
-        ),
-        bottomNavigationBar: SafeArea(
-          top: false,
-          child: Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Color(0x140F172A),
-                  blurRadius: 28,
-                  offset: Offset(0, -8),
-                ),
-              ],
-            ),
-            child: NavigationBar(
-              selectedIndex: _index,
-              onDestinationSelected: _selectTab,
-              labelBehavior:
-                  NavigationDestinationLabelBehavior.alwaysShow,
-              destinations: const [
-                NavigationDestination(
-                  icon: Icon(
-                    Icons.home_outlined,
-                    color: NizikColors.ink,
-                  ),
-                  selectedIcon: Icon(
-                    Icons.home_rounded,
-                    color: NizikColors.green,
-                  ),
-                  label: 'سەرەتا',
-                ),
-                NavigationDestination(
-                  icon: Icon(
-                    Icons.map_outlined,
-                    color: NizikColors.ink,
-                  ),
-                  selectedIcon: Icon(
-                    Icons.map_rounded,
-                    color: NizikColors.green,
-                  ),
-                  label: 'ماپ',
-                ),
-                NavigationDestination(
-                  icon: Icon(
-                    Icons.favorite_border_rounded,
-                    color: NizikColors.ink,
-                  ),
-                  selectedIcon: Icon(
-                    Icons.favorite_rounded,
-                    color: Colors.red,
-                  ),
-                  label: 'دڵخوازەکان',
-                ),
-              ],
-            ),
-          ),
         ),
       ),
     );
