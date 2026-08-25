@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Merge these items into your existing LaunchTheme in styles.xml if needed. -->
+    <style name="NizikLaunchTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowSplashScreenBackground">#043D2E</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/nizik_splash_logo</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">#043D2E</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

@@ -1,0 +1,31 @@
+<!-- 1) These go directly under <manifest>, before <application> -->
+
+<uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+
+<!-- 2) These intent-filters go INSIDE your existing <activity android:name=".MainActivity" ...> -->
+
+<!-- Custom link: nizik://shop/SHOP_SLUG -->
+<intent-filter>
+    <action android:name="android.intent.action.VIEW" />
+    <category android:name="android.intent.category.DEFAULT" />
+    <category android:name="android.intent.category.BROWSABLE" />
+
+    <data
+        android:scheme="nizik"
+        android:host="shop" />
+</intent-filter>
+
+<!-- Website link: https://my-pro.click/public/?p=SHOP_SLUG -->
+<intent-filter android:autoVerify="false">
+    <action android:name="android.intent.action.VIEW" />
+    <category android:name="android.intent.category.DEFAULT" />
+    <category android:name="android.intent.category.BROWSABLE" />
+
+    <data
+        android:scheme="https"
+        android:host="my-pro.click"
+        android:pathPrefix="/public" />
+</intent-filter>
