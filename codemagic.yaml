@@ -1,4 +1,24 @@
 workflows:
+  android-release-apk:
+    name: Nizik Android Release APK
+    instance_type: linux_x2
+    max_build_duration: 60
+
+    environment:
+      flutter: stable
+
+    scripts:
+      - name: Flutter pub get
+        script: |
+          flutter pub get
+
+      - name: Build Android release APK
+        script: |
+          flutter build apk --release
+
+    artifacts:
+      - build/app/outputs/flutter-apk/app-release.apk
+
   ios-unsigned-ipa:
     name: Nizik Native Unsigned IPA
     instance_type: mac_mini_m2
