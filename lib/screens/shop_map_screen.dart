@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -31,6 +33,8 @@ class _ShopMapScreenState extends State<ShopMapScreen> {
   final MapController _mapController =
       MapController();
 
+  StreamSubscription<Position>? _liveLocationSubscription;
+
   List<_MappedShop> _mappedShops = [];
 
   Shop? _selectedShop;
@@ -55,6 +59,21 @@ class _ShopMapScreenState extends State<ShopMapScreen> {
     super.initState();
     _selectedShop = widget.focusShop;
     _loadMapData();
+
+    // Start foreground live GPS after the map has rendered.
+    // The marker then updates automatically without manual refresh.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _startLiveLocation();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _liveLocationSubscription?.cancel();
+    _liveLocationSubscription = null;
+    super.dispose();
   }
 
   Future<void> _loadMapData() async {
@@ -307,6 +326,54 @@ class _ShopMapScreenState extends State<ShopMapScreen> {
     return null;
   }
 
+  Future<void> _startLiveLocation() async {
+    if (_liveLocationSubscription != null) {
+      return;
+    }
+
+    try {
+      // Get one immediate fix first, then keep listening for changes.
+      final position =
+          await LocationService.getCurrentLocation();
+
+      if (!mounted) return;
+
+      _applyLivePosition(position);
+      _subscribeToLiveLocation();
+    } catch (_) {
+      // Permission/service messages are handled when the user taps
+      // the location button. Avoid showing repeated snackbars here.
+    }
+  }
+
+  void _subscribeToLiveLocation() {
+    if (_liveLocationSubscription != null) {
+      return;
+    }
+
+    _liveLocationSubscription =
+        LocationService.watchPosition().listen(
+      _applyLivePosition,
+      onError: (Object _) {
+        _liveLocationSubscription?.cancel();
+        _liveLocationSubscription = null;
+      },
+    );
+  }
+
+  void _applyLivePosition(Position position) {
+    if (!mounted) return;
+
+    final point = LatLng(
+      position.latitude,
+      position.longitude,
+    );
+
+    setState(() {
+      _myLocation = point;
+    });
+  }
+
   Future<void> _goToMyLocation({
     bool moveMap = true,
   }) async {
@@ -334,9 +401,8 @@ class _ShopMapScreenState extends State<ShopMapScreen> {
         position.longitude,
       );
 
-      setState(() {
-        _myLocation = point;
-      });
+      _applyLivePosition(position);
+      _subscribeToLiveLocation();
 
       if (moveMap) {
         _mapController.move(

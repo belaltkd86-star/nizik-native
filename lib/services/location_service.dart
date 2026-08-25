@@ -7,7 +7,7 @@ class LocationService {
     if (!serviceEnabled) {
       await Geolocator.openLocationSettings();
       throw Exception(
-        'Location Services ـی ئامێرەکە داخراوە. تکایە چالاکی بکە.',
+        'Location Services ـی ئامێرەکەت داخراوە. تکایە چالاکی بکە.',
       );
     }
 
@@ -25,9 +25,8 @@ class LocationService {
 
     if (permission == LocationPermission.deniedForever) {
       await Geolocator.openAppSettings();
-
       throw Exception(
-        'ڕێگەپێدانی شوێن بە هەمیشەیی داخراوە. لە Settings چالاکی بکە.',
+        'ڕێگەپێدانی شوێن داخراوە. لە Settings ـی ئامێرەکەت چالاکی بکە.',
       );
     }
 
@@ -47,8 +46,23 @@ class LocationService {
     );
   }
 
-  // بۆ compatibility لەگەڵ screen ـە کۆنەکان
+  // Kept for compatibility with the current Home and Map screens.
   static Future<Position> getCurrentLocation() async {
     return getCurrentPosition();
+  }
+
+  // Foreground live GPS stream. A new position is emitted after
+  // roughly 3 metres of movement, so no manual refresh is needed.
+  static Stream<Position> watchPosition() async* {
+    await requestPermission();
+
+    const locationSettings = LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 3,
+    );
+
+    yield* Geolocator.getPositionStream(
+      locationSettings: locationSettings,
+    );
   }
 }
