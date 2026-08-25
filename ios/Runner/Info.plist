@@ -4,6 +4,8 @@
 	<dict>
 		<key>CADisableMinimumFrameDurationOnPhone</key>
 		<true/>
+		<key>NSLocationWhenInUseUsageDescription</key>
+        <string>ئەپلیکەیشنی نزیک پێویستی بە شوێنی تۆ هەیە بۆ دۆزینەوەی دووکان و خزمەتگوزارییە نزیکەکان.</string>
 		<key>CFBundleDevelopmentRegion</key>
 		<string>$(DEVELOPMENT_LANGUAGE)</string>
 		<key>CFBundleDisplayName</key>
