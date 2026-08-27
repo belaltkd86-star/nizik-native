@@ -1,17 +1,11 @@
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
+import '../security/nizik_network.dart';
 
 import '../models/shop.dart';
 import 'local_store_service.dart';
 
 class ApiService {
-  static const String _shopsUrl =
-      'https://my-pro.click/public/index.php';
-
-  static const String _clientApiUrl =
-      'https://my-pro.click/api/client_api.php';
-
   final LocalStoreService _store = LocalStoreService.instance;
 
   String _shopsCacheKey({
@@ -51,7 +45,8 @@ class ApiService {
       meta: meta,
     );
 
-    final uri = Uri.parse(_shopsUrl).replace(
+    final uri = NizikEndpoints.uri(
+      '/public/index.php',
       queryParameters: {
         'action': 'shops',
         'page': page.toString(),
@@ -64,12 +59,10 @@ class ApiService {
     );
 
     try {
-      final response = await http.get(
+      final response = await NizikNetwork.get(
         uri,
-        headers: const {
-          'Accept': 'application/json',
-        },
-      ).timeout(const Duration(seconds: 20));
+        timeout: const Duration(seconds: 20),
+      );
 
       if (response.statusCode != 200) {
         throw Exception(
@@ -113,7 +106,8 @@ class ApiService {
     final cacheKey =
         'profile_${base64Url.encode(utf8.encode(slug.trim()))}';
 
-    final uri = Uri.parse(_clientApiUrl).replace(
+    final uri = NizikEndpoints.uri(
+      '/api/client_api.php',
       queryParameters: {
         'action': 'get_public_profile',
         'slug': slug.trim(),
@@ -121,12 +115,10 @@ class ApiService {
     );
 
     try {
-      final response = await http.get(
+      final response = await NizikNetwork.get(
         uri,
-        headers: const {
-          'Accept': 'application/json',
-        },
-      ).timeout(const Duration(seconds: 20));
+        timeout: const Duration(seconds: 20),
+      );
 
       if (response.statusCode != 200) {
         throw Exception(

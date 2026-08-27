@@ -783,14 +783,33 @@ class _ShopMapScreenState extends State<ShopMapScreen> {
       ),
       children: [
         TileLayer(
-          // The old Nizik map automatically used CARTO when
-          // OpenStreetMap tiles were blocked. Use CARTO here
-          // as the primary native layer to avoid the old 403 issue.
-          urlTemplate: _darkMap
-              ? 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'
-              : 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+          // Use the official OpenStreetMap standard raster tiles.
+          // This avoids CARTO's new "API key required" watermark.
+          //
+          // IMPORTANT: OSM requires a unique app User-Agent on native apps.
+          urlTemplate:
+              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName:
-              'click.mypro.nizik',
+              'com.nizik.nizik_native',
+          maxNativeZoom: 19,
+
+          // Keep Nizik's light/dark map toggle without using a second
+          // third-party basemap provider or exposing an API key.
+          tileBuilder: _darkMap
+              ? (context, tileWidget, tile) {
+                  return ColorFiltered(
+                    colorFilter: const ColorFilter.matrix(
+                      <double>[
+                        -0.78, 0, 0, 0, 238,
+                        0, -0.78, 0, 0, 238,
+                        0, 0, -0.78, 0, 238,
+                        0, 0, 0, 1, 0,
+                      ],
+                    ),
+                    child: tileWidget,
+                  );
+                }
+              : null,
         ),
 
         if (_routePoints.isNotEmpty)
@@ -852,14 +871,14 @@ class _ShopMapScreenState extends State<ShopMapScreen> {
 
         SimpleAttributionWidget(
           source: const Text(
-            '© OpenStreetMap © CARTO',
+            '© OpenStreetMap contributors',
           ),
           alignment:
               Alignment.bottomLeft,
           onTap: () {
             launchUrl(
               Uri.parse(
-                'https://carto.com/attributions',
+                'https://www.openstreetmap.org/copyright',
               ),
               mode: LaunchMode
                   .externalApplication,

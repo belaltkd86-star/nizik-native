@@ -8,6 +8,7 @@ class ShopCard extends StatelessWidget {
   final VoidCallback onTap;
   final bool isFavorite;
   final VoidCallback onFavoriteTap;
+  final String? distanceText;
 
   const ShopCard({
     super.key,
@@ -15,6 +16,7 @@ class ShopCard extends StatelessWidget {
     required this.onTap,
     required this.isFavorite,
     required this.onFavoriteTap,
+    this.distanceText,
   });
 
   @override
@@ -56,14 +58,52 @@ class ShopCard extends StatelessWidget {
                   crossAxisAlignment:
                       CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      shop.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w900,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            shop.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        if (shop.isPinned) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFF4D6),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.push_pin_rounded,
+                                  size: 13,
+                                  color: Color(0xFFB7791F),
+                                ),
+                                SizedBox(width: 3),
+                                Text(
+                                  'پینکراو',
+                                  style: TextStyle(
+                                    color: Color(0xFF8A5A00),
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 5),
                     Text(
@@ -87,14 +127,24 @@ class ShopCard extends StatelessWidget {
                           child: Text(
                             shop.locationLabel,
                             maxLines: 1,
-                            overflow:
-                                TextOverflow.ellipsis,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               color: Colors.black54,
                               fontSize: 12,
                             ),
                           ),
                         ),
+                        if (distanceText != null) ...[
+                          const SizedBox(width: 8),
+                          Text(
+                            distanceText!,
+                            style: const TextStyle(
+                              color: Color(0xFF2E7D32),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ],

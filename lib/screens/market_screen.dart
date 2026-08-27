@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/market_item.dart';
 import '../services/market_service.dart';
@@ -56,6 +57,33 @@ class _MarketScreenState extends State<MarketScreen> {
     }
   }
 
+  Future<void> _openPublishWhatsApp() async {
+    final uri = Uri.https(
+      'wa.me',
+      '/9647751011001',
+      <String, String>{
+        'text':
+            'سڵاو، دەمەوێت ئایتمێک لە بازاڕی نزیک بڵاوبکەمەوە.',
+      },
+    );
+
+    final opened = await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    );
+
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'نەتوانرا WhatsApp بکرێتەوە.',
+            textDirection: TextDirection.rtl,
+          ),
+        ),
+      );
+    }
+  }
+
   void _openItem(MarketItem item) {
     Navigator.push(
       context,
@@ -87,6 +115,105 @@ class _MarketScreenState extends State<MarketScreen> {
           child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  child: Material(
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(22),
+                    child: InkWell(
+                      onTap: _openPublishWhatsApp,
+                      borderRadius: BorderRadius.circular(22),
+                      child: Ink(
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            begin: Alignment.topRight,
+                            end: Alignment.bottomLeft,
+                            colors: [
+                              Color(0xFF0F8F4F),
+                              Color(0xFF25B867),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(22),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x220F8F4F),
+                              blurRadius: 18,
+                              offset: Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 52,
+                                height: 52,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(
+                                    alpha: 0.16,
+                                  ),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.white24,
+                                  ),
+                                ),
+                                child: const Icon(
+                                  Icons.chat_rounded,
+                                  color: Colors.white,
+                                  size: 27,
+                                ),
+                              ),
+                              const SizedBox(width: 13),
+                              const Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'بۆ زیادکردنی ئایتمەکانت',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                    SizedBox(height: 4),
+                                    Text(
+                                      'لێرە نامە بۆ واتساپ بنێرە',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                        height: 1.4,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(
+                                  Icons.arrow_back_rounded,
+                                  color: Color(0xFF0F8F4F),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
               SliverToBoxAdapter(
                 child: Container(
                   margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import 'about_screen.dart';
-import 'favorites_screen.dart';
 import 'home_screen.dart';
 import 'market_screen.dart';
 import 'shop_map_screen.dart';
@@ -28,7 +27,6 @@ class _MainShellState extends State<MainShell> {
       ),
       const ShopMapScreen(),
       const MarketScreen(),
-      const FavoritesScreen(),
       const AboutScreen(),
     ];
 
@@ -54,30 +52,13 @@ class _MainShellState extends State<MainShell> {
               label: 'نەخشە',
             ),
             NavigationDestination(
-              icon: Icon(
-                Icons.shopping_bag_outlined,
-              ),
-              selectedIcon: Icon(
-                Icons.shopping_bag_rounded,
-              ),
+              icon: Icon(Icons.shopping_bag_outlined),
+              selectedIcon: Icon(Icons.shopping_bag_rounded),
               label: 'بازاڕ',
             ),
             NavigationDestination(
-              icon: Icon(
-                Icons.favorite_border_rounded,
-              ),
-              selectedIcon: Icon(
-                Icons.favorite_rounded,
-              ),
-              label: 'دڵخوازەکان',
-            ),
-            NavigationDestination(
-              icon: Icon(
-                Icons.info_outline_rounded,
-              ),
-              selectedIcon: Icon(
-                Icons.info_rounded,
-              ),
+              icon: Icon(Icons.info_outline_rounded),
+              selectedIcon: Icon(Icons.info_rounded),
               label: 'دەربارە',
             ),
           ],

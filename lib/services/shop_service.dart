@@ -1,22 +1,21 @@
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
+import '../security/nizik_network.dart';
 
 import '../models/shop.dart';
 
 class ShopService {
-  static const String _baseUrl =
-      'https://my-pro.click/api/shops_public.php';
-
   static Future<ShopMetadata> fetchMetadata() async {
-    final uri = Uri.parse(_baseUrl).replace(
+    final uri = NizikEndpoints.uri(
+      '/api/shops_public.php',
       queryParameters: {
         'action': 'metadata',
       },
     );
 
-    final response = await http.get(uri).timeout(
-      const Duration(seconds: 15),
+    final response = await NizikNetwork.get(
+      uri,
+      timeout: const Duration(seconds: 15),
     );
 
     if (response.statusCode != 200) {
@@ -87,12 +86,14 @@ class ShopService {
       params['region_id'] = regionId.toString();
     }
 
-    final uri = Uri.parse(_baseUrl).replace(
+    final uri = NizikEndpoints.uri(
+      '/api/shops_public.php',
       queryParameters: params,
     );
 
-    final response = await http.get(uri).timeout(
-      const Duration(seconds: 15),
+    final response = await NizikNetwork.get(
+      uri,
+      timeout: const Duration(seconds: 15),
     );
 
     if (response.statusCode != 200) {
@@ -124,15 +125,17 @@ class ShopService {
   }
 
   static Future<ShopDetail> fetchDetail(String slug) async {
-    final uri = Uri.parse(_baseUrl).replace(
+    final uri = NizikEndpoints.uri(
+      '/api/shops_public.php',
       queryParameters: {
         'action': 'detail',
         'slug': slug,
       },
     );
 
-    final response = await http.get(uri).timeout(
-      const Duration(seconds: 15),
+    final response = await NizikNetwork.get(
+      uri,
+      timeout: const Duration(seconds: 15),
     );
 
     if (response.statusCode != 200) {
@@ -163,15 +166,17 @@ class ShopService {
   static Future<ShopCoordinates> resolveCoordinates(
     String slug,
   ) async {
-    final uri = Uri.parse(_baseUrl).replace(
+    final uri = NizikEndpoints.uri(
+      '/api/shops_public.php',
       queryParameters: {
         'action': 'coords',
         'shop': slug,
       },
     );
 
-    final response = await http.get(uri).timeout(
-      const Duration(seconds: 12),
+    final response = await NizikNetwork.get(
+      uri,
+      timeout: const Duration(seconds: 12),
     );
 
     final dynamic decoded =

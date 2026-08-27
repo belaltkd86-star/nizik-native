@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/shop.dart';
 import '../services/favorites_service.dart';
 import '../services/shop_service.dart';
+import '../widgets/report_sheet.dart';
 import 'shop_map_screen.dart';
 
 class ShopDetailScreen extends StatefulWidget {
@@ -404,6 +405,19 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
                       foregroundColor: Colors.white,
                       actions: [
                         IconButton(
+                          tooltip: 'ڕاپۆرتکردن',
+                          onPressed: () => ReportSheet.show(
+                            context,
+                            targetType: 'shop',
+                            targetId: shop.id,
+                            targetSlug: shop.slug,
+                          ),
+                          icon: const Icon(
+                            Icons.flag_outlined,
+                            color: Colors.white,
+                          ),
+                        ),
+                        IconButton(
                           tooltip: 'دڵخواز',
                           onPressed: () =>
                               FavoritesService.toggle(
@@ -486,64 +500,102 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
 
                             const SizedBox(height: 24),
 
-                            Row(
-                              children: [
-                                Container(
-                                  width: 42,
-                                  height: 42,
-                                  decoration: BoxDecoration(
-                                    color: const Color(
-                                      0xFFE6F6EA,
+                            if (detail.menuItems.isEmpty &&
+                                detail.socialLinks.isNotEmpty) ...[
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 42,
+                                    height: 42,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFE6F6EA),
+                                      borderRadius:
+                                          BorderRadius.circular(14),
                                     ),
-                                    borderRadius:
-                                        BorderRadius.circular(
-                                      14,
-                                    ),
-                                  ),
-                                  child: const Icon(
-                                    Icons
-                                        .restaurant_menu_rounded,
-                                    color: Color(
-                                      0xFF15803D,
+                                    child: const Icon(
+                                      Icons.alternate_email_rounded,
+                                      color: Color(0xFF15803D),
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: 10),
-                                const Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment
-                                            .start,
-                                    children: [
-                                      Text(
-                                        'مێنۆ و بەرهەمەکان',
-                                        style: TextStyle(
-                                          fontSize: 21,
-                                          fontWeight:
-                                              FontWeight
-                                                  .w900,
+                                  const SizedBox(width: 10),
+                                  const Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'سۆشیال میدیا',
+                                          style: TextStyle(
+                                            fontSize: 21,
+                                            fontWeight: FontWeight.w900,
+                                          ),
                                         ),
-                                      ),
-                                      SizedBox(height: 2),
-                                      Text(
-                                        'بەشێک بکەرەوە بۆ بینینی ئایتمەکان',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color:
-                                              Colors.black45,
+                                        SizedBox(height: 2),
+                                        Text(
+                                          'ئەم دووکانە مێنیوی نییە؛ ڕێگاکانی پەیوەندی لێرەن',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.black45,
+                                          ),
                                         ),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              ],
-                            ),
-
-                            const SizedBox(height: 12),
-
-                            _MenuCategories(
-                              detail: detail,
-                            ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              _InlineSocialLinks(
+                                links: detail.socialLinks,
+                                onTap: _openSocial,
+                                iconFor: _socialIcon,
+                              ),
+                            ] else ...[
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 42,
+                                    height: 42,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFE6F6EA),
+                                      borderRadius:
+                                          BorderRadius.circular(14),
+                                    ),
+                                    child: const Icon(
+                                      Icons.restaurant_menu_rounded,
+                                      color: Color(0xFF15803D),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  const Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'مێنۆ و بەرهەمەکان',
+                                          style: TextStyle(
+                                            fontSize: 21,
+                                            fontWeight: FontWeight.w900,
+                                          ),
+                                        ),
+                                        SizedBox(height: 2),
+                                        Text(
+                                          'بەشێک بکەرەوە بۆ بینینی ئایتمەکان',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.black45,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              _MenuCategories(
+                                detail: detail,
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -972,6 +1024,78 @@ class _InfoCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _InlineSocialLinks extends StatelessWidget {
+  final List<ShopSocialLink> links;
+  final ValueChanged<ShopSocialLink> onTap;
+  final IconData Function(String platform) iconFor;
+
+  const _InlineSocialLinks({
+    required this.links,
+    required this.onTap,
+    required this.iconFor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: links.map((social) {
+        return Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: () => onTap(social),
+            child: Container(
+              constraints: const BoxConstraints(minWidth: 145),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 13,
+              ),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: const Color(0xFFE8EEE9),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE6F6EA),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      iconFor(social.platform),
+                      color: const Color(0xFF15803D),
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 9),
+                  Flexible(
+                    child: Text(
+                      social.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 }

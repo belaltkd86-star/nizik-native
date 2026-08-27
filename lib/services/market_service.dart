@@ -1,13 +1,10 @@
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
+import '../security/nizik_network.dart';
 
 import '../models/market_item.dart';
 
 class MarketService {
-  static const String _baseUrl =
-      'https://my-pro.click/api/market_public.php';
-
   static Future<List<MarketItem>> fetchItems({
     String? query,
   }) async {
@@ -19,10 +16,14 @@ class MarketService {
       params['q'] = query.trim();
     }
 
-    final uri = Uri.parse(_baseUrl).replace(queryParameters: params);
+    final uri = NizikEndpoints.uri(
+      '/api/market_public.php',
+      queryParameters: params,
+    );
 
-    final response = await http.get(uri).timeout(
-      const Duration(seconds: 20),
+    final response = await NizikNetwork.get(
+      uri,
+      timeout: const Duration(seconds: 20),
     );
 
     if (response.statusCode != 200) {
@@ -52,15 +53,17 @@ class MarketService {
   }
 
   static Future<MarketItemDetail> fetchDetail(int id) async {
-    final uri = Uri.parse(_baseUrl).replace(
+    final uri = NizikEndpoints.uri(
+      '/api/market_public.php',
       queryParameters: {
         'action': 'detail',
         'id': id.toString(),
       },
     );
 
-    final response = await http.get(uri).timeout(
-      const Duration(seconds: 20),
+    final response = await NizikNetwork.get(
+      uri,
+      timeout: const Duration(seconds: 20),
     );
 
     if (response.statusCode != 200) {

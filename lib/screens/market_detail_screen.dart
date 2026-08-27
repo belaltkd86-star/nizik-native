@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/market_item.dart';
 import '../services/market_service.dart';
+import '../widgets/report_sheet.dart';
 
 class MarketDetailScreen extends StatefulWidget {
   final int itemId;
@@ -103,6 +104,17 @@ class _MarketDetailScreenState extends State<MarketDetailScreen> {
                   expandedHeight: 330,
                   backgroundColor: Colors.white,
                   surfaceTintColor: Colors.white,
+                  actions: [
+                    IconButton(
+                      tooltip: 'ڕاپۆرتکردن',
+                      onPressed: () => ReportSheet.show(
+                        context,
+                        targetType: 'market_item',
+                        targetId: item.id,
+                      ),
+                      icon: const Icon(Icons.flag_outlined),
+                    ),
+                  ],
                   flexibleSpace: FlexibleSpaceBar(
                     background: _ImageGallery(
                       images: item.images,

@@ -1,10 +1,10 @@
 import 'dart:convert';
 
 import 'package:geolocator/geolocator.dart';
-import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
 import '../models/shop.dart';
+import '../security/nizik_network.dart';
 import 'local_store_service.dart';
 
 class ShopLocationService {
@@ -97,22 +97,17 @@ class ShopLocationService {
     }
 
     try {
-      final uri = Uri.parse(
-        'https://my-pro.click/public/location.php',
-      ).replace(
+      final uri = NizikEndpoints.uri(
+        '/public/location.php',
         queryParameters: {
           'action': 'coords',
           'shop': slug,
         },
       );
 
-      final response = await http.get(
+      final response = await NizikNetwork.get(
         uri,
-        headers: const {
-          'Accept': 'application/json',
-        },
-      ).timeout(
-        const Duration(seconds: 10),
+        timeout: const Duration(seconds: 10),
       );
 
       if (response.statusCode != 200) {

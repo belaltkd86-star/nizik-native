@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../models/shop.dart';
 import '../services/favorites_service.dart';
 import '../services/location_service.dart';
 import '../services/shop_service.dart';
 import '../widgets/shop_card.dart';
+import 'favorites_screen.dart';
 import 'shop_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -29,6 +31,11 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _loadingShops = true;
   bool _loadingMetadata = true;
   bool _gettingLocation = false;
+  bool _sortingNearest = false;
+  bool _nearestEnabled = false;
+
+  Position? _currentPosition;
+  final Map<String, double> _distanceMeters = {};
 
   String? _shopsError;
   String _locationText = 'شوێن دیاری نەکراوە';
@@ -91,6 +98,10 @@ class _HomeScreenState extends State<HomeScreen> {
         _shops = shops;
         _loadingShops = false;
       });
+
+      if (_nearestEnabled) {
+        await _recalculateDistances();
+      }
     } catch (e) {
       if (!mounted) return;
 
@@ -118,11 +129,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
       setState(() {
         if (position == null) {
+          _currentPosition = null;
           _locationText = 'ڕێگە بە Location نەدراوە';
         } else {
-          _locationText =
-              '${position.latitude.toStringAsFixed(5)}, '
-              '${position.longitude.toStringAsFixed(5)}';
+          _currentPosition = position;
+          _locationText = 'شوێنی تۆ دیاری کرا';
         }
       });
     } catch (_) {
@@ -136,6 +147,162 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() => _gettingLocation = false);
       }
     }
+  }
+
+  Future<void> _toggleNearest() async {
+    if (_sortingNearest) return;
+
+    if (_nearestEnabled) {
+      setState(() {
+        _nearestEnabled = false;
+        _distanceMeters.clear();
+      });
+      return;
+    }
+
+    setState(() {
+      _nearestEnabled = true;
+    });
+
+    if (_currentPosition == null) {
+      await _requestLocation();
+    }
+
+    if (_currentPosition == null) {
+      if (mounted) {
+        setState(() {
+          _nearestEnabled = false;
+        });
+      }
+      return;
+    }
+
+    await _recalculateDistances();
+  }
+
+  Future<void> _recalculateDistances() async {
+    final position = _currentPosition;
+
+    if (position == null || _sortingNearest || _shops.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _sortingNearest = true;
+    });
+
+    final distances = <String, double>{};
+
+    try {
+      // Keep the home page fast. The map/API already caches resolved
+      // Google Maps links, so subsequent runs become much faster.
+      final candidates = _shops
+          .where(
+            (shop) =>
+                shop.googleMapsUrl != null &&
+                shop.googleMapsUrl!.trim().isNotEmpty,
+          )
+          .take(36)
+          .toList();
+
+      const batchSize = 6;
+
+      for (var i = 0; i < candidates.length; i += batchSize) {
+        final end = (i + batchSize < candidates.length)
+            ? i + batchSize
+            : candidates.length;
+
+        final batch = candidates.sublist(i, end);
+
+        final results = await Future.wait(
+          batch.map((shop) async {
+            try {
+              final coords =
+                  await ShopService.resolveCoordinates(shop.slug);
+
+              final meters = Geolocator.distanceBetween(
+                position.latitude,
+                position.longitude,
+                coords.lat,
+                coords.lng,
+              );
+
+              return MapEntry(shop.slug, meters);
+            } catch (_) {
+              return null;
+            }
+          }),
+        );
+
+        for (final result in results) {
+          if (result != null) {
+            distances[result.key] = result.value;
+          }
+        }
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _distanceMeters
+          ..clear()
+          ..addAll(distances);
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _sortingNearest = false;
+        });
+      }
+    }
+  }
+
+  List<Shop> get _sortedShops {
+    final result = List<Shop>.of(_shops);
+
+    result.sort((a, b) {
+      if (a.isPinned != b.isPinned) {
+        return a.isPinned ? -1 : 1;
+      }
+
+      if (_nearestEnabled) {
+        final aDistance = _distanceMeters[a.slug];
+        final bDistance = _distanceMeters[b.slug];
+
+        if (aDistance != null && bDistance != null) {
+          return aDistance.compareTo(bDistance);
+        }
+        if (aDistance != null) return -1;
+        if (bDistance != null) return 1;
+      }
+
+      return 0;
+    });
+
+    return result;
+  }
+
+  String? _distanceTextFor(Shop shop) {
+    final meters = _distanceMeters[shop.slug];
+
+    if (meters == null) return null;
+
+    if (meters < 1000) {
+      return '${meters.round()} m';
+    }
+
+    final km = meters / 1000;
+    return km < 10
+        ? '${km.toStringAsFixed(1)} km'
+        : '${km.toStringAsFixed(0)} km';
+  }
+
+  void _openFavorites() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const FavoritesScreen(),
+      ),
+    );
   }
 
   List<ShopRegion> get _visibleRegions {
@@ -196,9 +363,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 _buildSearch(),
                 const SizedBox(height: 14),
                 _buildFilters(),
-                const SizedBox(height: 18),
-                _buildMarketButton(),
-                const SizedBox(height: 26),
+                const SizedBox(height: 24),
                 _buildSectionTitle(),
                 const SizedBox(height: 14),
                 _buildShops(),
@@ -264,6 +429,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   Icons.location_on_rounded,
                   color: Color(0xFF43A047),
                 ),
+        ),
+        IconButton(
+          tooltip: 'دڵخوازەکان',
+          onPressed: _openFavorites,
+          icon: const Icon(
+            Icons.favorite_rounded,
+            color: Color(0xFFE53935),
+          ),
         ),
       ],
     );
@@ -526,6 +699,34 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
+        OutlinedButton.icon(
+          onPressed: _loadingShops || _sortingNearest
+              ? null
+              : _toggleNearest,
+          icon: _sortingNearest
+              ? const SizedBox(
+                  width: 15,
+                  height: 15,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Icon(
+                  _nearestEnabled
+                      ? Icons.near_me_rounded
+                      : Icons.near_me_outlined,
+                  size: 17,
+                ),
+          label: Text(
+            _nearestEnabled ? 'نزیکترین ✓' : 'نزیکترین',
+          ),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xFF2E7D32),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 11,
+              vertical: 8,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
         if (!_loadingShops && _shopsError == null)
           Container(
             padding: const EdgeInsets.symmetric(
@@ -572,11 +773,15 @@ class _HomeScreenState extends State<HomeScreen> {
     return ValueListenableBuilder<Set<String>>(
       valueListenable: FavoritesService.notifier,
       builder: (context, favorites, _) {
+        final shops = _sortedShops;
+
         return Column(
-          children: _shops.map(
+          children: shops.map(
             (shop) => ShopCard(
               shop: shop,
               isFavorite: favorites.contains(shop.slug),
+              distanceText:
+                  _nearestEnabled ? _distanceTextFor(shop) : null,
               onFavoriteTap: () =>
                   _toggleFavorite(shop.slug),
               onTap: () => _openShop(shop),
