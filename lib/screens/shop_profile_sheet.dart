@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/shop.dart';
+import '../security/nizik_network.dart';
 import '../services/api_service.dart';
 import '../services/local_store_service.dart';
 
@@ -216,7 +217,7 @@ class _ShopProfileSheetState
 
   Future<void> _shareProfile() async {
     final link =
-        'https://my-pro.click/public/?p=${Uri.encodeComponent(widget.slug)}';
+        NizikEndpoints.publicProfile(widget.slug).toString();
 
     await Clipboard.setData(
       ClipboardData(text: link),

@@ -4,6 +4,7 @@ import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../models/shop.dart';
+import '../security/nizik_network.dart';
 import '../services/api_service.dart';
 import '../services/local_store_service.dart';
 import '../services/route_service.dart';
@@ -302,7 +303,7 @@ class _MapScreenState
         return item.shop.name
                 .toLowerCase()
                 .contains(search) ||
-            item.shop.bio
+            (item.shop.bio ?? '')
                 .toLowerCase()
                 .contains(search) ||
             item.shop.location
