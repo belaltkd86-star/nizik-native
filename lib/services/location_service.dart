@@ -33,6 +33,43 @@ class LocationService {
     return permission;
   }
 
+  // Lightweight foreground lookup used on the Home screen.
+  // It may ask for permission once, but it never opens Settings by itself.
+  // This keeps automatic location helpful without trapping the user in a
+  // settings screen when GPS or permission is unavailable.
+  static Future<Position?> tryGetCurrentLocation() async {
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) return null;
+
+    var permission = await Geolocator.checkPermission();
+
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      return null;
+    }
+
+    try {
+      const settings = LocationSettings(
+        accuracy: LocationAccuracy.high,
+        timeLimit: Duration(seconds: 12),
+      );
+
+      return await Geolocator.getCurrentPosition(
+        locationSettings: settings,
+      );
+    } catch (_) {
+      try {
+        return await Geolocator.getLastKnownPosition();
+      } catch (_) {
+        return null;
+      }
+    }
+  }
+
   static Future<Position> getCurrentPosition() async {
     await requestPermission();
 

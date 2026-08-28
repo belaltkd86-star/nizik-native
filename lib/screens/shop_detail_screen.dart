@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/shop.dart';
 import '../services/favorites_service.dart';
 import '../services/shop_service.dart';
+import '../services/share_service.dart';
 import '../widgets/report_sheet.dart';
 import 'shop_map_screen.dart';
 
@@ -368,7 +369,7 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
               favorites.contains(widget.slug);
 
           return Scaffold(
-            backgroundColor: const Color(0xFFF3F7F4),
+            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
             body: FutureBuilder<ShopDetail>(
               future: _future,
               builder: (context, snapshot) {
@@ -405,6 +406,18 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
                       foregroundColor: Colors.white,
                       actions: [
                         IconButton(
+                          tooltip: 'هاوبەشکردن',
+                          onPressed: () => NizikShareService.show(
+                            context,
+                            title: shop.name,
+                            link: NizikShareService.shopLink(shop.slug),
+                          ),
+                          icon: const Icon(
+                            Icons.ios_share_rounded,
+                            color: Colors.white,
+                          ),
+                        ),
+                        IconButton(
                           tooltip: 'ڕاپۆرتکردن',
                           onPressed: () => ReportSheet.show(
                             context,
@@ -420,9 +433,7 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
                         IconButton(
                           tooltip: 'دڵخواز',
                           onPressed: () =>
-                              FavoritesService.toggle(
-                            shop.slug,
-                          ),
+                              FavoritesService.toggleShop(shop),
                           icon: Icon(
                             isFavorite
                                 ? Icons.favorite_rounded
@@ -713,21 +724,17 @@ class _ProfileHero extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 7),
-                  Container(
-                    width: 22,
-                    height: 22,
-                    decoration:
-                        const BoxDecoration(
-                      color: Color(0xFF22C55E),
-                      shape: BoxShape.circle,
+                  if (shop.isVerified) ...[
+                    const SizedBox(width: 7),
+                    const Tooltip(
+                      message: 'پشتڕاستکراوە',
+                      child: Icon(
+                        Icons.verified_rounded,
+                        size: 23,
+                        color: Color(0xFF57B8FF),
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.check_rounded,
-                      size: 15,
-                      color: Colors.white,
-                    ),
-                  ),
+                  ],
                 ],
               ),
 

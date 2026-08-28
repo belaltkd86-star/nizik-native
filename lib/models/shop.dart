@@ -11,12 +11,16 @@ class Shop {
   final String? logoUrl;
   final String? googleMapsUrl;
   final String? businessType;
+  final String? businessTypeName;
+  final String? businessTypeIcon;
   final int? cityId;
   final int? regionId;
   final String? cityName;
   final String? regionName;
   final String? addressDetail;
   final bool isPinned;
+  final bool isVerified;
+  final ShopOpeningStatus? openingStatus;
 
   const Shop({
     required this.id,
@@ -27,12 +31,16 @@ class Shop {
     required this.logoUrl,
     required this.googleMapsUrl,
     required this.businessType,
+    this.businessTypeName,
+    this.businessTypeIcon,
     required this.cityId,
     required this.regionId,
     required this.cityName,
     required this.regionName,
     required this.addressDetail,
     required this.isPinned,
+    this.isVerified = false,
+    this.openingStatus,
   });
 
   factory Shop.fromJson(Map<String, dynamic> json) {
@@ -45,31 +53,34 @@ class Shop {
       logoUrl: _mediaUrl(json['logo_url']),
       googleMapsUrl: _str(json['google_maps_url']),
       businessType: _str(json['business_type']),
+      businessTypeName: _str(json['business_type_name']),
+      businessTypeIcon: _str(json['business_type_icon']),
       cityId: _nullableInt(json['city_id']),
       regionId: _nullableInt(json['region_id']),
       cityName: _str(json['city_name']),
       regionName: _str(json['region_name']),
       addressDetail: _str(json['address_detail']),
       isPinned: _int(json['is_pinned']) == 1 || json['is_pinned'] == true,
+      isVerified: _int(json['is_verified']) == 1 || json['is_verified'] == true,
+      openingStatus: json['opening_status'] is Map
+          ? ShopOpeningStatus.fromJson(
+              Map<String, dynamic>.from(json['opening_status'] as Map),
+            )
+          : null,
     );
   }
 
   String get typeLabel {
-    switch ((businessType ?? '').toLowerCase()) {
-      case 'restaurant':
-        return 'خواردنگە';
-      case 'cafe':
-        return 'کافێ';
-      case 'market':
-        return 'مارکێت';
-      case 'clothing':
-        return 'جلوبەرگ';
-      case 'other':
-        return 'گشتی';
-      default:
-        final value = businessType?.trim() ?? '';
-        return value.isEmpty ? 'بزنس' : value;
-    }
+    final label = businessTypeName?.trim() ?? '';
+    if (label.isNotEmpty) return label;
+
+    final value = businessType?.trim() ?? '';
+    return value.isEmpty ? 'بزنس' : value;
+  }
+
+  String get typeIcon {
+    final icon = businessTypeIcon?.trim() ?? '';
+    return icon.isEmpty ? '🏪' : icon;
   }
 
   String get locationLabel {
@@ -100,13 +111,74 @@ class Shop {
       'logo_url': logoUrl,
       'google_maps_url': googleMapsUrl,
       'business_type': businessType,
+      'business_type_name': businessTypeName,
+      'business_type_icon': businessTypeIcon,
       'city_id': cityId,
       'region_id': regionId,
       'city_name': cityName,
       'region_name': regionName,
       'address_detail': addressDetail,
       'is_pinned': isPinned ? 1 : 0,
+      'is_verified': isVerified ? 1 : 0,
+      if (openingStatus != null) 'opening_status': openingStatus!.toJson(),
     };
+  }
+}
+
+
+class ShopOpeningStatus {
+  final bool isOpen;
+  final String state;
+  final String label;
+  final String? nextChange;
+  final int? nextOpenWeekday;
+  final String? nextOpenTime;
+  final int? nextOpenDaysAhead;
+
+  const ShopOpeningStatus({
+    required this.isOpen,
+    required this.state,
+    required this.label,
+    this.nextChange,
+    this.nextOpenWeekday,
+    this.nextOpenTime,
+    this.nextOpenDaysAhead,
+  });
+
+  factory ShopOpeningStatus.fromJson(Map<String, dynamic> json) {
+    final nextOpen = json['next_open'];
+    final nextMap = nextOpen is Map
+        ? Map<String, dynamic>.from(nextOpen)
+        : const <String, dynamic>{};
+    return ShopOpeningStatus(
+      isOpen: _bool(json['is_open']),
+      state: (json['state'] ?? '').toString().trim(),
+      label: (json['label'] ?? '').toString().trim(),
+      nextChange: _str(json['next_change']),
+      nextOpenWeekday: _nullableInt(nextMap['weekday']),
+      nextOpenTime: _str(nextMap['time']),
+      nextOpenDaysAhead: _nullableInt(nextMap['days_ahead']),
+    );
+  }
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'is_open': isOpen,
+        'state': state,
+        'label': label,
+        'next_change': nextChange,
+        if (nextOpenWeekday != null || nextOpenTime != null)
+          'next_open': <String, dynamic>{
+            'weekday': nextOpenWeekday,
+            'time': nextOpenTime,
+            'days_ahead': nextOpenDaysAhead,
+          },
+      };
+
+  String get compactLabel {
+    if (isOpen && nextChange != null && nextChange!.isNotEmpty) {
+      return 'کراوەیە • تا $nextChange';
+    }
+    return label.isEmpty ? (isOpen ? 'کراوەیە' : 'داخراوە') : label;
   }
 }
 
@@ -148,18 +220,27 @@ class ShopRegion {
 }
 
 class ShopBusinessType {
+  final int id;
   final String key;
   final String name;
+  final String icon;
+  final int shopCount;
 
   const ShopBusinessType({
+    this.id = 0,
     required this.key,
     required this.name,
+    this.icon = '🏪',
+    this.shopCount = 0,
   });
 
   factory ShopBusinessType.fromJson(Map<String, dynamic> json) {
     return ShopBusinessType(
-      key: (json['key'] ?? json['code'] ?? '').toString(),
-      name: (json['name'] ?? '').toString(),
+      id: _int(json['id']),
+      key: (json['key'] ?? json['code'] ?? '').toString().trim(),
+      name: (json['name'] ?? '').toString().trim(),
+      icon: (json['icon'] ?? '🏪').toString().trim(),
+      shopCount: _int(json['shop_count']),
     );
   }
 }
@@ -623,6 +704,8 @@ class ShopProfileData {
       logoUrl: logoUrl.isEmpty ? null : logoUrl,
       googleMapsUrl: googleMapsUrl.isEmpty ? null : googleMapsUrl,
       businessType: businessType.isEmpty ? null : businessType,
+      businessTypeName: businessTypeName.isEmpty ? null : businessTypeName,
+      businessTypeIcon: businessTypeIcon.isEmpty ? null : businessTypeIcon,
       cityId: cityId,
       regionId: regionId,
       cityName: cityName.isEmpty ? null : cityName,

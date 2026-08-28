@@ -1,9 +1,9 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../models/market_item.dart';
 import '../services/market_service.dart';
+import '../services/contact_service.dart';
 import 'market_detail_screen.dart';
 
 class MarketScreen extends StatefulWidget {
@@ -58,30 +58,11 @@ class _MarketScreenState extends State<MarketScreen> {
   }
 
   Future<void> _openPublishWhatsApp() async {
-    final uri = Uri.https(
-      'wa.me',
-      '/9647751011001',
-      <String, String>{
-        'text':
-            'سڵاو، دەمەوێت ئایتمێک لە بازاڕی نزیک بڵاوبکەمەوە.',
-      },
+    await NizikContactService.request(
+      context,
+      section: 'بازاڕ',
+      extra: 'دەمەوێت ئایتمێک زیاد بکەم یان داواکارییەکم هەیە.',
     );
-
-    final opened = await launchUrl(
-      uri,
-      mode: LaunchMode.externalApplication,
-    );
-
-    if (!opened && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'نەتوانرا WhatsApp بکرێتەوە.',
-            textDirection: TextDirection.rtl,
-          ),
-        ),
-      );
-    }
   }
 
   void _openItem(MarketItem item) {
@@ -98,15 +79,14 @@ class _MarketScreenState extends State<MarketScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: const Color(0xFFF4F7F4),
         appBar: AppBar(
           title: const Text(
             'بازاڕ',
             style: TextStyle(fontWeight: FontWeight.w800),
           ),
           centerTitle: true,
-          backgroundColor: Colors.white,
-          surfaceTintColor: Colors.white,
+          backgroundColor: Theme.of(context).colorScheme.surface,
+          surfaceTintColor: Colors.transparent,
         ),
         body: RefreshIndicator(
           onRefresh: () => _loadItems(
@@ -166,13 +146,13 @@ class _MarketScreenState extends State<MarketScreen> {
                                 ),
                               ),
                               const SizedBox(width: 13),
-                              const Expanded(
+                              Expanded(
                                 child: Column(
                                   crossAxisAlignment:
                                       CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      'بۆ زیادکردنی ئایتمەکانت',
+                                      'داواکاری بازاڕ',
                                       style: TextStyle(
                                         color: Colors.white,
                                         fontSize: 16,
@@ -181,7 +161,7 @@ class _MarketScreenState extends State<MarketScreen> {
                                     ),
                                     SizedBox(height: 4),
                                     Text(
-                                      'لێرە نامە بۆ واتساپ بنێرە',
+                                      'WhatsApp: ${NizikContactService.whatsappDisplay}',
                                       style: TextStyle(
                                         color: Colors.white,
                                         fontSize: 13,
@@ -293,7 +273,6 @@ class _MarketScreenState extends State<MarketScreen> {
                             )
                           : null,
                       filled: true,
-                      fillColor: Colors.white,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(18),
                         borderSide: BorderSide.none,
@@ -381,7 +360,7 @@ class _MarketCard extends StatelessWidget {
     final sold = item.status == 'sold';
 
     return Material(
-      color: Colors.white,
+      color: Theme.of(context).colorScheme.surface,
       borderRadius: BorderRadius.circular(20),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -468,10 +447,10 @@ class _MarketCard extends StatelessWidget {
                     const Spacer(),
                     Row(
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.location_on_outlined,
                           size: 16,
-                          color: Colors.black45,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                         const SizedBox(width: 3),
                         Expanded(
@@ -479,8 +458,8 @@ class _MarketCard extends StatelessWidget {
                             item.locationLabel,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.black54,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
                               fontSize: 12,
                             ),
                           ),

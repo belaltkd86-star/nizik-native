@@ -4,6 +4,10 @@ import 'package:app_links/app_links.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../models/app_feature.dart';
+import '../models/module_spec.dart';
+import '../screens/market_detail_screen.dart';
+import '../screens/module_detail_screen.dart';
 import '../screens/shop_detail_screen.dart';
 
 class DeepLinkService {
@@ -11,9 +15,7 @@ class DeepLinkService {
 
   static final DeepLinkService instance = DeepLinkService._();
 
-  final GlobalKey<NavigatorState> navigatorKey =
-      GlobalKey<NavigatorState>();
-
+  final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
   final AppLinks _appLinks = AppLinks();
 
   StreamSubscription<Uri>? _subscription;
@@ -23,113 +25,130 @@ class DeepLinkService {
 
   void start() {
     if (_subscription != null) return;
-
     _subscription = _appLinks.uriLinkStream.listen(
       _handleIncomingUri,
       onError: (Object error) {
-        if (kDebugMode) {
-          debugPrint('NIZIK_DEEP_LINK_ERROR=$error');
-        }
+        if (kDebugMode) debugPrint('NIZIK_DEEP_LINK_ERROR=$error');
       },
     );
+    unawaited(_readInitialLink());
+  }
+
+  Future<void> _readInitialLink() async {
+    try {
+      final uri = await _appLinks.getInitialLink();
+      if (uri != null) _handleIncomingUri(uri);
+    } catch (error) {
+      if (kDebugMode) debugPrint('NIZIK_INITIAL_DEEP_LINK_ERROR=$error');
+    }
   }
 
   void _handleIncomingUri(Uri uri) {
-    final slug = _shopSlugFromUri(uri);
-    if (slug == null) return;
+    if (!_isSupported(uri)) return;
 
-    // Guard against duplicate callbacks arriving almost simultaneously.
     final now = DateTime.now();
     final raw = uri.toString();
-
     if (_lastHandledLink == raw &&
         _lastHandledAt != null &&
-        now.difference(_lastHandledAt!) <
-            const Duration(seconds: 2)) {
+        now.difference(_lastHandledAt!) < const Duration(seconds: 2)) {
       return;
     }
-
     _lastHandledLink = raw;
     _lastHandledAt = now;
 
-    if (!_openShop(slug)) {
+    if (!_openUri(uri)) {
       _pendingUri = uri;
-
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _flushPending();
-      });
+      WidgetsBinding.instance.addPostFrameCallback((_) => _flushPending());
     }
   }
 
   void _flushPending() {
     final uri = _pendingUri;
     if (uri == null) return;
-
-    final slug = _shopSlugFromUri(uri);
-    if (slug == null) {
-      _pendingUri = null;
-      return;
-    }
-
-    if (_openShop(slug)) {
-      _pendingUri = null;
-    }
+    if (_openUri(uri)) _pendingUri = null;
   }
 
-  bool _openShop(String slug) {
+  bool _openUri(Uri uri) {
     final navigator = navigatorKey.currentState;
     if (navigator == null) return false;
 
-    navigator.push(
-      MaterialPageRoute<void>(
-        builder: (_) => ShopDetailScreen(
-          slug: slug,
+    final host = uri.host.toLowerCase();
+    if (host == 'shop') {
+      final slug = _firstCleanSegment(uri);
+      if (slug == null) return false;
+      navigator.push(
+        MaterialPageRoute<void>(
+          builder: (_) => ShopDetailScreen(slug: slug),
         ),
-      ),
-    );
+      );
+      return true;
+    }
 
-    return true;
+    if (host == 'market') {
+      final id = _firstPositiveInt(uri);
+      if (id == null) return false;
+      navigator.push(
+        MaterialPageRoute<void>(
+          builder: (_) => MarketDetailScreen(itemId: id),
+        ),
+      );
+      return true;
+    }
+
+    if (host == 'module') {
+      if (uri.pathSegments.length < 2) return false;
+      final key = uri.pathSegments[0].trim().toLowerCase();
+      final id = int.tryParse(uri.pathSegments[1]);
+      if (!_validKey(key) || id == null || id <= 0) return false;
+      final known = ModuleRegistry.byKey(key);
+      final spec = known ??
+          ModuleRegistry.fromFeature(
+            AppFeature(
+              key: key,
+              group: 'services',
+              title: key,
+              subtitle: '',
+              icon: '🧩',
+              contentMode: 'directory',
+              requiresLocation: false,
+              sortOrder: 100,
+            ),
+          );
+      navigator.push(
+        MaterialPageRoute<void>(
+          builder: (_) => ModuleDetailScreen(spec: spec, itemId: id),
+        ),
+      );
+      return true;
+    }
+
+    return false;
   }
 
-  String? _shopSlugFromUri(Uri uri) {
-    if (uri.scheme.toLowerCase() != 'nizik') {
-      return null;
-    }
-
-    String? slug;
+  bool _isSupported(Uri uri) {
+    if (uri.scheme.toLowerCase() != 'nizik') return false;
     final host = uri.host.toLowerCase();
+    return host == 'shop' || host == 'market' || host == 'module';
+  }
 
-    // Preferred form:
-    //   nizik://shop/SHOP-SLUG
-    if (host == 'shop') {
-      if (uri.pathSegments.isNotEmpty) {
-        slug = uri.pathSegments.first;
-      } else {
-        slug = uri.queryParameters['slug'];
-      }
-    }
-
-    // Also accept:
-    //   nizik:///shop/SHOP-SLUG
-    if (slug == null &&
-        host.isEmpty &&
-        uri.pathSegments.length >= 2 &&
-        uri.pathSegments.first.toLowerCase() == 'shop') {
-      slug = uri.pathSegments[1];
-    }
-
-    final clean = slug?.trim() ?? '';
-
-    if (clean.isEmpty || clean.length > 128) {
-      return null;
-    }
-
-    // The slug is later encoded as an HTTPS query parameter by ShopService.
-    // Reject control characters and path separators at the app boundary.
-    if (RegExp(r'[\x00-\x1F/\\]').hasMatch(clean)) {
-      return null;
-    }
-
+  String? _firstCleanSegment(Uri uri) {
+    final raw = uri.pathSegments.isNotEmpty
+        ? uri.pathSegments.first
+        : uri.queryParameters['slug'];
+    final clean = raw?.trim() ?? '';
+    if (clean.isEmpty || clean.length > 128) return null;
+    if (RegExp(r'[\x00-\x1F/\\]').hasMatch(clean)) return null;
     return clean;
   }
+
+  int? _firstPositiveInt(Uri uri) {
+    final raw = uri.pathSegments.isNotEmpty
+        ? uri.pathSegments.first
+        : uri.queryParameters['id'];
+    final id = int.tryParse(raw ?? '');
+    return id != null && id > 0 ? id : null;
+  }
+
+  bool _validKey(String value) =>
+      value.isNotEmpty && RegExp(r'^[a-z0-9_]+$').hasMatch(value);
 }

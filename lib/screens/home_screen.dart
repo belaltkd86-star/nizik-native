@@ -1,348 +1,184 @@
-import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
+import 'dart:async';
 
+import 'package:flutter/material.dart';
+
+import '../models/app_feature.dart';
+import '../models/module_spec.dart';
 import '../models/shop.dart';
+import '../services/app_config_service.dart';
 import '../services/favorites_service.dart';
-import '../services/location_service.dart';
+import '../services/location_preference_service.dart';
 import '../services/shop_service.dart';
+import '../services/shop_distance_service.dart';
+import '../services/theme_service.dart';
 import '../widgets/shop_card.dart';
 import 'favorites_screen.dart';
+import 'global_search_screen.dart';
+import 'module_list_screen.dart';
+import 'services_screen.dart';
 import 'shop_detail_screen.dart';
+import 'tools_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  final VoidCallback? onOpenMarket;
-
   const HomeScreen({
     super.key,
     this.onOpenMarket,
   });
+
+  final VoidCallback? onOpenMarket;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final TextEditingController _searchController =
-      TextEditingController();
+  final _locationPrefs = LocationPreferenceService.instance;
 
-  List<Shop> _shops = [];
-  ShopMetadata? _metadata;
-
+  List<Shop> _shops = const <Shop>[];
+  AppConfig? _appConfig;
   bool _loadingShops = true;
-  bool _loadingMetadata = true;
-  bool _gettingLocation = false;
-  bool _sortingNearest = false;
-  bool _nearestEnabled = false;
-
-  Position? _currentPosition;
-  final Map<String, double> _distanceMeters = {};
-
+  bool _loadingServices = true;
   String? _shopsError;
-  String _locationText = 'شوێن دیاری نەکراوە';
-
-  int? _selectedCityId;
-  int? _selectedRegionId;
-  String _selectedType = 'all';
+  String? _servicesError;
 
   @override
   void initState() {
     super.initState();
-    _loadMetadata();
+    _locationPrefs.preference.addListener(_onLocationChanged);
+    _loadServices();
     _loadShops();
   }
 
   @override
   void dispose() {
-    _searchController.dispose();
+    _locationPrefs.preference.removeListener(_onLocationChanged);
     super.dispose();
   }
 
-  Future<void> _loadMetadata() async {
+  void _onLocationChanged() {
+    _loadShops();
+  }
+
+  Future<void> _loadServices() async {
+    if (!mounted) return;
+    setState(() {
+      _loadingServices = true;
+      _servicesError = null;
+    });
+
     try {
-      final metadata = await ShopService.fetchMetadata();
-
+      final config = await AppConfigService.fetch();
       if (!mounted) return;
-
       setState(() {
-        _metadata = metadata;
-        _loadingMetadata = false;
+        _appConfig = config;
+        _loadingServices = false;
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
-
       setState(() {
-        _loadingMetadata = false;
+        _loadingServices = false;
+        _servicesError = e.toString().replaceFirst('Exception: ', '');
       });
     }
   }
 
   Future<void> _loadShops() async {
     if (!mounted) return;
-
     setState(() {
       _loadingShops = true;
       _shopsError = null;
     });
 
+    final location = _locationPrefs.preference.value;
+
     try {
       final shops = await ShopService.fetchShops(
-        query: _searchController.text,
-        type: _selectedType,
-        cityId: _selectedCityId,
-        regionId: _selectedRegionId,
+        cityId: location.cityId,
+        regionId: location.regionId,
       );
-
       if (!mounted) return;
-
       setState(() {
         _shops = shops;
         _loadingShops = false;
       });
-
-      if (_nearestEnabled) {
-        await _recalculateDistances();
-      }
+      unawaited(ShopDistanceService.instance.resolveForShops(shops, location).then((_) { if (mounted) setState(() {}); }));
     } catch (e) {
       if (!mounted) return;
-
       setState(() {
         _loadingShops = false;
-        _shopsError =
-            e.toString().replaceFirst('Exception: ', '');
+        _shopsError = e.toString().replaceFirst('Exception: ', '');
       });
     }
   }
 
-  Future<void> _requestLocation() async {
-    if (_gettingLocation) return;
-
-    setState(() {
-      _gettingLocation = true;
-      _locationText = 'شوێن دیاری دەکرێت...';
-    });
-
-    try {
-      final position =
-          await LocationService.getCurrentLocation();
-
-      if (!mounted) return;
-
-      setState(() {
-        if (position == null) {
-          _currentPosition = null;
-          _locationText = 'ڕێگە بە Location نەدراوە';
-        } else {
-          _currentPosition = position;
-          _locationText = 'شوێنی تۆ دیاری کرا';
-        }
-      });
-    } catch (_) {
-      if (!mounted) return;
-
-      setState(() {
-        _locationText = 'هەڵە لە Location';
-      });
-    } finally {
-      if (mounted) {
-        setState(() => _gettingLocation = false);
-      }
-    }
+  Future<void> _refreshHome() async {
+    await Future.wait<void>([
+      _loadServices(),
+      _loadShops(),
+    ]);
   }
 
-  Future<void> _toggleNearest() async {
-    if (_sortingNearest) return;
+  List<ModuleSpec> get _enabledModules {
+    final config = _appConfig;
+    if (config == null) return const <ModuleSpec>[];
 
-    if (_nearestEnabled) {
-      setState(() {
-        _nearestEnabled = false;
-        _distanceMeters.clear();
-      });
-      return;
-    }
+    final features = config.features
+        .where((feature) => feature.group.toLowerCase() == 'services')
+        .toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
-    setState(() {
-      _nearestEnabled = true;
-    });
-
-    if (_currentPosition == null) {
-      await _requestLocation();
-    }
-
-    if (_currentPosition == null) {
-      if (mounted) {
-        setState(() {
-          _nearestEnabled = false;
-        });
-      }
-      return;
-    }
-
-    await _recalculateDistances();
+    return features.map(ModuleRegistry.fromFeature).toList(growable: false);
   }
 
-  Future<void> _recalculateDistances() async {
-    final position = _currentPosition;
+  bool get _marketEnabled => _appConfig?.isEnabled('market') ?? false;
 
-    if (position == null || _sortingNearest || _shops.isEmpty) {
-      return;
-    }
-
-    setState(() {
-      _sortingNearest = true;
-    });
-
-    final distances = <String, double>{};
-
-    try {
-      // Keep the home page fast. The map/API already caches resolved
-      // Google Maps links, so subsequent runs become much faster.
-      final candidates = _shops
-          .where(
-            (shop) =>
-                shop.googleMapsUrl != null &&
-                shop.googleMapsUrl!.trim().isNotEmpty,
-          )
-          .take(36)
-          .toList();
-
-      const batchSize = 6;
-
-      for (var i = 0; i < candidates.length; i += batchSize) {
-        final end = (i + batchSize < candidates.length)
-            ? i + batchSize
-            : candidates.length;
-
-        final batch = candidates.sublist(i, end);
-
-        final results = await Future.wait(
-          batch.map((shop) async {
-            try {
-              final coords =
-                  await ShopService.resolveCoordinates(shop.slug);
-
-              final meters = Geolocator.distanceBetween(
-                position.latitude,
-                position.longitude,
-                coords.lat,
-                coords.lng,
-              );
-
-              return MapEntry(shop.slug, meters);
-            } catch (_) {
-              return null;
-            }
-          }),
-        );
-
-        for (final result in results) {
-          if (result != null) {
-            distances[result.key] = result.value;
-          }
-        }
-      }
-
-      if (!mounted) return;
-
-      setState(() {
-        _distanceMeters
-          ..clear()
-          ..addAll(distances);
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _sortingNearest = false;
-        });
-      }
-    }
+  int get _enabledToolCount {
+    final config = _appConfig;
+    if (config == null) return 0;
+    return config.features
+        .where((feature) => feature.group.toLowerCase() == 'tools')
+        .length;
   }
 
-  List<Shop> get _sortedShops {
-    final result = List<Shop>.of(_shops);
-
-    result.sort((a, b) {
-      if (a.isPinned != b.isPinned) {
-        return a.isPinned ? -1 : 1;
-      }
-
-      if (_nearestEnabled) {
-        final aDistance = _distanceMeters[a.slug];
-        final bDistance = _distanceMeters[b.slug];
-
-        if (aDistance != null && bDistance != null) {
-          return aDistance.compareTo(bDistance);
-        }
-        if (aDistance != null) return -1;
-        if (bDistance != null) return 1;
-      }
-
-      return 0;
-    });
-
-    return result;
+  void _openModule(ModuleSpec spec) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => ModuleListScreen(spec: spec)),
+    );
   }
 
-  String? _distanceTextFor(Shop shop) {
-    final meters = _distanceMeters[shop.slug];
-
-    if (meters == null) return null;
-
-    if (meters < 1000) {
-      return '${meters.round()} m';
-    }
-
-    final km = meters / 1000;
-    return km < 10
-        ? '${km.toStringAsFixed(1)} km'
-        : '${km.toStringAsFixed(0)} km';
+  void _openAllServices() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ServicesScreen()),
+    );
   }
 
   void _openFavorites() {
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const FavoritesScreen(),
-      ),
+      MaterialPageRoute(builder: (_) => const FavoritesScreen()),
     );
   }
 
-  List<ShopRegion> get _visibleRegions {
-    final metadata = _metadata;
-
-    if (metadata == null || _selectedCityId == null) {
-      return const [];
-    }
-
-    return metadata.regions
-        .where((region) => region.cityId == _selectedCityId)
-        .toList();
+  void _openGlobalSearch() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const GlobalSearchScreen()),
+    );
   }
 
-  void _clearFilters() {
-    setState(() {
-      _selectedCityId = null;
-      _selectedRegionId = null;
-      _selectedType = 'all';
-    });
-
-    _loadShops();
+  void _openTools() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ToolsScreen()),
+    );
   }
 
   void _openShop(Shop shop) {
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ShopDetailScreen(
-          slug: shop.slug,
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => ShopDetailScreen(slug: shop.slug)),
     );
   }
 
-  Future<void> _toggleFavorite(String slug) async {
-    await FavoritesService.toggle(slug);
-
-    if (mounted) {
-      setState(() {});
-    }
+  Future<void> _toggleFavorite(Shop shop) async {
+    await FavoritesService.toggleShop(shop);
+    if (mounted) setState(() {});
   }
 
   @override
@@ -350,24 +186,25 @@ class _HomeScreenState extends State<HomeScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: const Color(0xFFF6F8F6),
         body: SafeArea(
           child: RefreshIndicator(
-            onRefresh: _loadShops,
+            onRefresh: _refreshHome,
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(20),
               children: [
                 _buildHeader(),
-                const SizedBox(height: 22),
+                const SizedBox(height: 20),
                 _buildSearch(),
                 const SizedBox(height: 14),
-                _buildFilters(),
+                _buildToolsButton(),
                 const SizedBox(height: 24),
-                _buildSectionTitle(),
-                const SizedBox(height: 14),
+                _buildServicesSection(),
+                const SizedBox(height: 28),
+                _buildShopHeader(),
+                const SizedBox(height: 12),
                 _buildShops(),
-                const SizedBox(height: 30),
+                const SizedBox(height: 28),
               ],
             ),
           ),
@@ -377,370 +214,365 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildHeader() {
+    final theme = Theme.of(context);
+
     return Row(
       children: [
         const CircleAvatar(
           radius: 24,
           backgroundColor: Color(0xFF43A047),
-          child: Icon(
-            Icons.storefront_rounded,
-            color: Colors.white,
-          ),
+          child: Icon(Icons.storefront_rounded, color: Colors.white),
         ),
         const SizedBox(width: 12),
         Expanded(
           child: Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
                 'نزیک',
-                style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w900,
-                ),
+                style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 2),
-              Text(
-                _locationText,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.black54,
-                  fontSize: 12,
-                ),
+              ValueListenableBuilder<NizikLocationPreference>(
+                valueListenable: _locationPrefs.preference,
+                builder: (context, location, _) {
+                  return Row(
+                    children: [
+                      Icon(
+                        location.isAutomatic
+                            ? Icons.my_location_rounded
+                            : Icons.location_on_outlined,
+                        size: 14,
+                        color: theme.colorScheme.primary,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          location.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
             ],
           ),
         ),
         IconButton(
-          tooltip: 'شوێنی ئێستا',
-          onPressed:
-              _gettingLocation ? null : _requestLocation,
-          icon: _gettingLocation
-              ? const SizedBox(
-                  width: 19,
-                  height: 19,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                  ),
-                )
-              : const Icon(
-                  Icons.location_on_rounded,
-                  color: Color(0xFF43A047),
-                ),
+          tooltip: theme.brightness == Brightness.dark ? 'لایت مۆد' : 'دارک مۆد',
+          onPressed: ThemeService.instance.toggle,
+          icon: Icon(
+            theme.brightness == Brightness.dark
+                ? Icons.light_mode_rounded
+                : Icons.dark_mode_rounded,
+            color: theme.colorScheme.primary,
+          ),
         ),
         IconButton(
           tooltip: 'دڵخوازەکان',
           onPressed: _openFavorites,
-          icon: const Icon(
-            Icons.favorite_rounded,
-            color: Color(0xFFE53935),
-          ),
+          icon: const Icon(Icons.favorite_rounded, color: Color(0xFFE53935)),
         ),
       ],
     );
   }
 
   Widget _buildSearch() {
-    return TextField(
-      controller: _searchController,
-      textInputAction: TextInputAction.search,
-      onSubmitted: (_) => _loadShops(),
-      onChanged: (_) => setState(() {}),
-      decoration: InputDecoration(
-        hintText: 'گەڕان بە ناوی دووکان...',
-        prefixIcon: IconButton(
-          onPressed: _loadShops,
-          icon: const Icon(
-            Icons.search_rounded,
-            color: Color(0xFF43A047),
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surface,
+      borderRadius: BorderRadius.circular(19),
+      child: InkWell(
+        onTap: _openGlobalSearch,
+        borderRadius: BorderRadius.circular(19),
+        child: Container(
+          height: 58,
+          padding: const EdgeInsets.symmetric(horizontal: 15),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(19),
+            border: Border.all(color: theme.colorScheme.outlineVariant),
           ),
-        ),
-        suffixIcon: _searchController.text.isNotEmpty
-            ? IconButton(
-                onPressed: () {
-                  _searchController.clear();
-                  setState(() {});
-                  _loadShops();
-                },
-                icon: const Icon(Icons.close_rounded),
-              )
-            : null,
-        filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(18),
-          borderSide: BorderSide.none,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFilters() {
-    if (_loadingMetadata) {
-      return const SizedBox(
-        height: 52,
-        child: Center(
-          child: LinearProgressIndicator(),
-        ),
-      );
-    }
-
-    final metadata = _metadata;
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        children: [
-          Row(
+          child: Row(
             children: [
-              const Icon(
-                Icons.tune_rounded,
-                color: Color(0xFF43A047),
-              ),
-              const SizedBox(width: 8),
-              const Expanded(
+              Icon(Icons.search_rounded, color: theme.colorScheme.primary),
+              const SizedBox(width: 10),
+              Expanded(
                 child: Text(
-                  'فلتەری دووکانەکان',
+                  'گەڕان لە دووکان، خزمەتگوزاری و بازاڕ...',
                   style: TextStyle(
-                    fontWeight: FontWeight.w900,
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontSize: 12.5,
                   ),
                 ),
               ),
-              TextButton.icon(
-                onPressed: _clearFilters,
-                icon: const Icon(
-                  Icons.refresh_rounded,
-                  size: 18,
-                ),
-                label: const Text('پاککردنەوە'),
-              ),
+              Icon(Icons.arrow_back_ios_new_rounded, size: 14, color: theme.colorScheme.primary),
             ],
-          ),
-          const SizedBox(height: 10),
-
-          DropdownButtonFormField<int?>(
-            value: _selectedCityId,
-            isExpanded: true,
-            decoration: _filterDecoration('شار'),
-            items: [
-              const DropdownMenuItem<int?>(
-                value: null,
-                child: Text('هەموو شارەکان'),
-              ),
-              ...?metadata?.cities.map(
-                (city) => DropdownMenuItem<int?>(
-                  value: city.id,
-                  child: Text(city.name),
-                ),
-              ),
-            ],
-            onChanged: (value) {
-              setState(() {
-                _selectedCityId = value;
-                _selectedRegionId = null;
-              });
-
-              _loadShops();
-            },
-          ),
-
-          const SizedBox(height: 10),
-
-          DropdownButtonFormField<int?>(
-            value: _selectedRegionId,
-            isExpanded: true,
-            decoration: _filterDecoration('ناوچە'),
-            items: [
-              const DropdownMenuItem<int?>(
-                value: null,
-                child: Text('هەموو ناوچەکان'),
-              ),
-              ..._visibleRegions.map(
-                (region) => DropdownMenuItem<int?>(
-                  value: region.id,
-                  child: Text(region.name),
-                ),
-              ),
-            ],
-            onChanged: _selectedCityId == null
-                ? null
-                : (value) {
-                    setState(() {
-                      _selectedRegionId = value;
-                    });
-
-                    _loadShops();
-                  },
-          ),
-
-          const SizedBox(height: 10),
-
-          DropdownButtonFormField<String>(
-            value: _selectedType,
-            isExpanded: true,
-            decoration:
-                _filterDecoration('جۆری بزنس'),
-            items: [
-              const DropdownMenuItem<String>(
-                value: 'all',
-                child: Text('هەموو بەشەکان'),
-              ),
-              ...?metadata?.businessTypes.map(
-                (type) => DropdownMenuItem<String>(
-                  value: type.key,
-                  child: Text(type.name),
-                ),
-              ),
-            ],
-            onChanged: (value) {
-              setState(() {
-                _selectedType = value ?? 'all';
-              });
-
-              _loadShops();
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  InputDecoration _filterDecoration(String label) {
-    return InputDecoration(
-      labelText: label,
-      filled: true,
-      fillColor: const Color(0xFFF5F8F5),
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 14,
-        vertical: 11,
-      ),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide.none,
-      ),
-    );
-  }
-
-  Widget _buildMarketButton() {
-    return SizedBox(
-      height: 88,
-      child: FilledButton(
-        onPressed: widget.onOpenMarket,
-        style: FilledButton.styleFrom(
-          padding: const EdgeInsets.all(17),
-          backgroundColor: const Color(0xFF2E7D32),
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
           ),
         ),
-        child: const Row(
-          children: [
-            CircleAvatar(
-              radius: 26,
-              backgroundColor: Colors.white24,
-              child: Icon(
-                Icons.shopping_bag_rounded,
-                color: Colors.white,
-                size: 28,
-              ),
+      ),
+    );
+  }
+
+  Widget _buildToolsButton() {
+    final theme = Theme.of(context);
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(22),
+      child: InkWell(
+        onTap: _openTools,
+        borderRadius: BorderRadius.circular(22),
+        child: Ink(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                theme.colorScheme.secondaryContainer,
+                theme.colorScheme.primaryContainer,
+              ],
             ),
-            SizedBox(width: 14),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: theme.colorScheme.outlineVariant),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary,
+                  borderRadius: BorderRadius.circular(17),
+                ),
+                child: Icon(Icons.handyman_rounded, color: theme.colorScheme.onPrimary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('ئامرازەکان', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 3),
+                    Text(
+                      _enabledToolCount > 0
+                          ? '$_enabledToolCount ئامرازی چالاک • هەژمارکەر، QR، Compass و زیاتر'
+                          : 'هەژمارکەر، QR، Compass و ئامرازە بەسوودەکان',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 10.5, height: 1.35),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.arrow_back_ios_new_rounded, size: 15, color: theme.colorScheme.primary),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildServicesSection() {
+    final modules = _enabledModules;
+    final itemCount = modules.length + (_marketEnabled ? 1 : 0);
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(Icons.grid_view_rounded, color: theme.colorScheme.primary),
+            ),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
-                mainAxisAlignment:
-                    MainAxisAlignment.center,
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'بازاڕ',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                    ),
+                  const Text(
+                    'خزمەتگوزارییەکان',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
                   ),
-                  SizedBox(height: 3),
+                  const SizedBox(height: 2),
                   Text(
-                    'کاڵا و شتە بەردەستەکان ببینە',
+                    'بازاڕ و خزمەتگوزارییەکان لێرەوە بکەرەوە',
                     style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 13,
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontSize: 11,
                     ),
                   ),
                 ],
               ),
             ),
-            Icon(
-              Icons.arrow_back_ios_new_rounded,
-              size: 17,
-            ),
+            if (!_loadingServices && itemCount > 0)
+              TextButton(onPressed: _openAllServices, child: const Text('هەمووی')),
           ],
+        ),
+        const SizedBox(height: 12),
+        if (_loadingServices)
+          const SizedBox(
+            height: 142,
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_servicesError != null)
+          _messageCard(
+            icon: Icons.cloud_off_rounded,
+            text: 'خزمەتگوزارییەکان لۆد نەکران.',
+            action: TextButton(onPressed: _loadServices, child: const Text('دووبارە')),
+          )
+        else if (itemCount == 0)
+          _messageCard(
+            icon: Icons.widgets_outlined,
+            text: 'هیچ خزمەتگوزارییەکی چالاک نییە.',
+          )
+        else
+          SizedBox(
+            height: 148,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              itemCount: itemCount,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (context, index) {
+                if (_marketEnabled && index == 0) {
+                  return _serviceCard(
+                    emoji: '🛍️',
+                    title: 'بازاڕ',
+                    subtitle: 'کاڵا و شتە فرۆشیارییەکان ببینە و داواکاری بکە',
+                    onTap: widget.onOpenMarket,
+                  );
+                }
+
+                final moduleIndex = index - (_marketEnabled ? 1 : 0);
+                final spec = modules[moduleIndex];
+
+                return _serviceCard(
+                  emoji: spec.emoji,
+                  title: spec.title,
+                  subtitle: spec.subtitle,
+                  onTap: () => _openModule(spec),
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _serviceCard({
+    required String emoji,
+    required String title,
+    required String subtitle,
+    required VoidCallback? onTap,
+  }) {
+    final theme = Theme.of(context);
+
+    return SizedBox(
+      width: 174,
+      child: Material(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(22),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 46,
+                      height: 46,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(emoji, style: const TextStyle(fontSize: 24)),
+                    ),
+                    const Spacer(),
+                    Icon(
+                      Icons.arrow_back_ios_new_rounded,
+                      size: 14,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ],
+                ),
+                const Spacer(),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontSize: 10.5,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildSectionTitle() {
+  Widget _buildShopHeader() {
+    final theme = Theme.of(context);
+    final location = _locationPrefs.preference.value;
+
     return Row(
       children: [
-        const Expanded(
-          child: Text(
-            'دووکانەکان',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ),
-        OutlinedButton.icon(
-          onPressed: _loadingShops || _sortingNearest
-              ? null
-              : _toggleNearest,
-          icon: _sortingNearest
-              ? const SizedBox(
-                  width: 15,
-                  height: 15,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : Icon(
-                  _nearestEnabled
-                      ? Icons.near_me_rounded
-                      : Icons.near_me_outlined,
-                  size: 17,
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                location.hasArea ? 'دووکانەکانی ${location.label}' : 'دووکانەکان',
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                'فلتەری دووکان لە پەڕەی سەرەکی لادراوە؛ شوێن لە سێتینگ کۆنتڕۆڵ دەکرێت.',
+                style: TextStyle(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontSize: 10.5,
                 ),
-          label: Text(
-            _nearestEnabled ? 'نزیکترین ✓' : 'نزیکترین',
-          ),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: const Color(0xFF2E7D32),
-            padding: const EdgeInsets.symmetric(
-              horizontal: 11,
-              vertical: 8,
-            ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(width: 8),
         if (!_loadingShops && _shopsError == null)
           Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 10,
-              vertical: 5,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
-              color: const Color(0xFFE8F5E9),
-              borderRadius: BorderRadius.circular(999),
+              color: theme.colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(99),
             ),
             child: Text(
               '${_shops.length}',
-              style: const TextStyle(
-                color: Color(0xFF2E7D32),
+              style: TextStyle(
+                color: theme.colorScheme.onPrimaryContainer,
                 fontWeight: FontWeight.w900,
               ),
             ),
@@ -752,116 +584,84 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildShops() {
     if (_loadingShops) {
       return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 45),
-        child: Center(
-          child: CircularProgressIndicator(),
-        ),
+        padding: EdgeInsets.symmetric(vertical: 42),
+        child: Center(child: CircularProgressIndicator()),
       );
     }
 
     if (_shopsError != null) {
-      return _ErrorBox(
-        message: _shopsError!,
-        onRetry: _loadShops,
+      return _messageCard(
+        icon: Icons.cloud_off_rounded,
+        text: _shopsError!,
+        action: TextButton(onPressed: _loadShops, child: const Text('دووبارە')),
       );
     }
 
     if (_shops.isEmpty) {
-      return const _EmptyShops();
+      final location = _locationPrefs.preference.value;
+      return _messageCard(
+        icon: Icons.storefront_outlined,
+        text: location.hasArea
+            ? 'لە ${location.label} هیچ دووکانێک نەدۆزرایەوە.'
+            : 'هیچ دووکانێک نەدۆزرایەوە.',
+      );
     }
 
-    return ValueListenableBuilder<Set<String>>(
-      valueListenable: FavoritesService.notifier,
-      builder: (context, favorites, _) {
-        final shops = _sortedShops;
+    return ValueListenableBuilder<Map<String, double>>(
+      valueListenable: ShopDistanceService.instance.distances,
+      builder: (context, distances, _) {
+        final location = _locationPrefs.preference.value;
+        final sorted = location.hasCoordinates
+            ? ShopDistanceService.instance.sortNearest(_shops)
+            : (List<Shop>.of(_shops)
+              ..sort((a, b) {
+                if (a.isPinned != b.isPinned) return a.isPinned ? -1 : 1;
+                return a.name.compareTo(b.name);
+              }));
 
-        return Column(
-          children: shops.map(
-            (shop) => ShopCard(
-              shop: shop,
-              isFavorite: favorites.contains(shop.slug),
-              distanceText:
-                  _nearestEnabled ? _distanceTextFor(shop) : null,
-              onFavoriteTap: () =>
-                  _toggleFavorite(shop.slug),
-              onTap: () => _openShop(shop),
-            ),
-          ).toList(),
+        return ValueListenableBuilder<Set<String>>(
+          valueListenable: FavoritesService.notifier,
+          builder: (context, favorites, __) {
+            return Column(
+              children: sorted
+                  .take(8)
+                  .map(
+                    (shop) => ShopCard(
+                      shop: shop,
+                      distanceText:
+                          ShopDistanceService.instance.distanceTextFor(shop.slug),
+                      isFavorite: favorites.contains(shop.slug),
+                      onFavoriteTap: () => _toggleFavorite(shop),
+                      onTap: () => _openShop(shop),
+                    ),
+                  )
+                  .toList(),
+            );
+          },
         );
       },
     );
   }
-}
 
-class _ErrorBox extends StatelessWidget {
-  final String message;
-  final Future<void> Function() onRetry;
-
-  const _ErrorBox({
-    required this.message,
-    required this.onRetry,
-  });
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _messageCard({
+    required IconData icon,
+    required String text,
+    Widget? action,
+  }) {
+    final theme = Theme.of(context);
     return Container(
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
-      child: Column(
+      child: Row(
         children: [
-          const Icon(
-            Icons.cloud_off_rounded,
-            size: 44,
-            color: Colors.black38,
-          ),
-          const SizedBox(height: 10),
-          Text(
-            message,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 14),
-          FilledButton.icon(
-            onPressed: onRetry,
-            icon: const Icon(Icons.refresh_rounded),
-            label: const Text('دووبارە هەوڵ بدەوە'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _EmptyShops extends StatelessWidget {
-  const _EmptyShops();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        vertical: 34,
-        horizontal: 20,
-      ),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: const Column(
-        children: [
-          Icon(
-            Icons.storefront_outlined,
-            size: 50,
-            color: Colors.black26,
-          ),
-          SizedBox(height: 10),
-          Text(
-            'هیچ دووکانێک نەدۆزرایەوە',
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-            ),
-          ),
+          Icon(icon, color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(width: 10),
+          Expanded(child: Text(text)),
+          if (action != null) action,
         ],
       ),
     );

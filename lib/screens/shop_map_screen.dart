@@ -10,15 +10,18 @@ import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/shop.dart';
+import '../services/location_preference_service.dart';
 import '../services/location_service.dart';
 import '../services/shop_service.dart';
 
 class ShopMapScreen extends StatefulWidget {
   final Shop? focusShop;
+  final bool autoLocate;
 
   const ShopMapScreen({
     super.key,
     this.focusShop,
+    this.autoLocate = true,
   });
 
   @override
@@ -27,11 +30,14 @@ class ShopMapScreen extends StatefulWidget {
 }
 
 class _ShopMapScreenState extends State<ShopMapScreen> {
+  final _locationPrefs = LocationPreferenceService.instance;
   static const LatLng _defaultCenter =
       LatLng(35.5613, 45.4309);
 
   final MapController _mapController =
       MapController();
+  final TextEditingController _mapSearchController =
+      TextEditingController();
 
   StreamSubscription<Position>? _liveLocationSubscription;
 
@@ -49,30 +55,65 @@ class _ShopMapScreenState extends State<ShopMapScreen> {
   bool _gettingLocation = false;
   bool _loadingRoute = false;
   bool _darkMap = false;
+  Brightness? _lastAppBrightness;
 
+  String _mapSearchQuery = '';
   String? _error;
   int _resolvedCount = 0;
   int _shopCount = 0;
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final brightness = Theme.of(context).brightness;
+    if (_lastAppBrightness != brightness) {
+      _lastAppBrightness = brightness;
+      _darkMap = brightness == Brightness.dark;
+    }
+  }
+
+  @override
   void initState() {
     super.initState();
     _selectedShop = widget.focusShop;
+    if (widget.focusShop == null) {
+      _locationPrefs.preference.addListener(_onLocationChanged);
+    }
     _loadMapData();
 
     // Start foreground live GPS after the map has rendered.
     // The marker then updates automatically without manual refresh.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _startLiveLocation();
-      }
-    });
+    if (widget.autoLocate) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _startLiveLocation();
+        }
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant ShopMapScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (!oldWidget.autoLocate && widget.autoLocate) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _startLiveLocation();
+      });
+    }
+  }
+
+  void _onLocationChanged() {
+    if (!mounted || widget.focusShop != null) return;
+    _loadMapData();
   }
 
   @override
   void dispose() {
+    _locationPrefs.preference.removeListener(_onLocationChanged);
     _liveLocationSubscription?.cancel();
     _liveLocationSubscription = null;
+    _mapSearchController.dispose();
     super.dispose();
   }
 
@@ -87,7 +128,11 @@ class _ShopMapScreenState extends State<ShopMapScreen> {
     });
 
     try {
-      final shops = await ShopService.fetchShops();
+      final location = _locationPrefs.preference.value;
+      final shops = await ShopService.fetchShops(
+        cityId: widget.focusShop == null ? location.cityId : null,
+        regionId: widget.focusShop == null ? location.regionId : null,
+      );
 
       if (!mounted) return;
 
@@ -671,6 +716,45 @@ class _ShopMapScreenState extends State<ShopMapScreen> {
     }
   }
 
+  List<_MappedShop> get _visibleMappedShops {
+    final query = _mapSearchQuery.trim().toLowerCase();
+    if (query.isEmpty) return _mappedShops;
+
+    return _mappedShops.where((mapped) {
+      final shop = mapped.shop;
+      final haystack = <String>[
+        shop.name,
+        shop.slug,
+        shop.typeLabel,
+        shop.businessType ?? '',
+        shop.cityName ?? '',
+        shop.regionName ?? '',
+        shop.addressDetail ?? '',
+        shop.phone ?? '',
+      ].join(' ').toLowerCase();
+
+      return haystack.contains(query);
+    }).toList();
+  }
+
+  void _submitMapSearch([String? _]) {
+    final matches = _visibleMappedShops;
+    if (_mapSearchQuery.trim().isEmpty || matches.isEmpty) return;
+    _selectShop(matches.first);
+  }
+
+  void _clearMapSearch() {
+    _mapSearchController.clear();
+    setState(() {
+      _mapSearchQuery = '';
+      _selectedShop = null;
+      _selectedPoint = null;
+      _routePoints = [];
+      _routeDistanceMeters = null;
+      _routeDurationSeconds = null;
+    });
+  }
+
   void _message(String text) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -687,8 +771,7 @@ class _ShopMapScreenState extends State<ShopMapScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor:
-            const Color(0xFFEAF0EC),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         body: SafeArea(
           child: Stack(
             children: [
@@ -699,7 +782,7 @@ class _ShopMapScreenState extends State<ShopMapScreen> {
               _buildTopBar(),
 
               Positioned(
-                top: 84,
+                top: 142,
                 right: 12,
                 child: _MapControls(
                   gettingLocation:
@@ -725,7 +808,7 @@ class _ShopMapScreenState extends State<ShopMapScreen> {
 
               if (_loading)
                 Positioned(
-                  top: 84,
+                  top: 142,
                   left: 12,
                   right: 82,
                   child: _LoadingPill(
@@ -738,12 +821,12 @@ class _ShopMapScreenState extends State<ShopMapScreen> {
               if (!_loading &&
                   _error == null)
                 Positioned(
-                  top: 84,
+                  top: 142,
                   left: 12,
                   right: 82,
                   child: _MapStatusPill(
                     resolved:
-                        _mappedShops.length,
+                        _visibleMappedShops.length,
                     total: _shopCount,
                   ),
                 ),
@@ -834,7 +917,7 @@ class _ShopMapScreenState extends State<ShopMapScreen> {
 
         MarkerLayer(
           markers: [
-            ..._mappedShops.map(
+            ..._visibleMappedShops.map(
               (mapped) {
                 final selected =
                     _selectedShop?.slug ==
@@ -895,16 +978,10 @@ class _ShopMapScreenState extends State<ShopMapScreen> {
       right: 10,
       left: 10,
       child: Container(
-        height: 62,
-        padding:
-            const EdgeInsets.symmetric(
-          horizontal: 8,
-        ),
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 9),
         decoration: BoxDecoration(
-          color: Colors.white
-              .withValues(alpha: 0.96),
-          borderRadius:
-              BorderRadius.circular(22),
+          color: Colors.white.withValues(alpha: 0.97),
+          borderRadius: BorderRadius.circular(24),
           boxShadow: const [
             BoxShadow(
               blurRadius: 22,
@@ -913,91 +990,132 @@ class _ShopMapScreenState extends State<ShopMapScreen> {
             ),
           ],
         ),
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            if (Navigator.of(context)
-                .canPop())
-              IconButton(
-                tooltip: 'گەڕانەوە',
-                onPressed: () =>
-                    Navigator.pop(context),
-                icon: const Icon(
-                  Icons
-                      .arrow_forward_rounded,
+            Row(
+              children: [
+                if (Navigator.of(context).canPop())
+                  IconButton(
+                    tooltip: 'گەڕانەوە',
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.arrow_forward_rounded),
+                  )
+                else
+                  const SizedBox(width: 8),
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [
+                        Color(0xFF10B981),
+                        Color(0xFF047857),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  child: const Icon(
+                    Icons.map_rounded,
+                    color: Colors.white,
+                  ),
                 ),
-              )
-            else
-              const SizedBox(width: 8),
-
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                gradient:
-                    const LinearGradient(
-                  colors: [
-                    Color(0xFF10B981),
-                    Color(0xFF047857),
-                  ],
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'نەخشەی نزیک',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
+                        ),
+                      ),
+                      Text(
+                        'دووکان • شوێن • ڕێگا',
+                        style: TextStyle(
+                          color: Colors.black45,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                borderRadius:
-                    BorderRadius.circular(14),
-              ),
-              child: const Icon(
-                Icons.map_rounded,
-                color: Colors.white,
-              ),
+                IconButton(
+                  tooltip: 'گۆڕینی ڕووکار',
+                  onPressed: () {
+                    setState(() {
+                      _darkMap = !_darkMap;
+                    });
+                  },
+                  icon: Icon(
+                    _darkMap
+                        ? Icons.light_mode_rounded
+                        : Icons.dark_mode_rounded,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'نوێکردنەوە',
+                  onPressed: _loadMapData,
+                  icon: const Icon(Icons.refresh_rounded),
+                ),
+              ],
             ),
-
-            const SizedBox(width: 10),
-
-            const Expanded(
-              child: Column(
-                mainAxisAlignment:
-                    MainAxisAlignment.center,
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'نەخشەی نزیک',
-                    style: TextStyle(
-                      fontWeight:
-                          FontWeight.w900,
-                      fontSize: 17,
+            const SizedBox(height: 6),
+            SizedBox(
+              height: 44,
+              child: TextField(
+                controller: _mapSearchController,
+                textInputAction: TextInputAction.search,
+                onChanged: (value) {
+                  setState(() {
+                    _mapSearchQuery = value;
+                    if (_selectedShop != null) {
+                      final selectedVisible = _visibleMappedShops.any(
+                        (entry) => entry.shop.slug == _selectedShop!.slug,
+                      );
+                      if (!selectedVisible) {
+                        _selectedShop = null;
+                        _selectedPoint = null;
+                        _routePoints = [];
+                        _routeDistanceMeters = null;
+                        _routeDurationSeconds = null;
+                      }
+                    }
+                  });
+                },
+                onSubmitted: _submitMapSearch,
+                decoration: InputDecoration(
+                  hintText: 'لە نەخشەدا بە ناوی دووکان، شار یان ناوچە بگەڕێ...',
+                  hintStyle: const TextStyle(fontSize: 11.5),
+                  prefixIcon: IconButton(
+                    tooltip: 'گەڕان',
+                    onPressed: () => _submitMapSearch(),
+                    icon: const Icon(
+                      Icons.search_rounded,
+                      color: Color(0xFF047857),
                     ),
                   ),
-                  Text(
-                    'دووکان • شوێن • ڕێگا',
-                    style: TextStyle(
-                      color:
-                          Colors.black45,
-                      fontSize: 10,
-                    ),
+                  suffixIcon: _mapSearchQuery.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: 'پاککردنەوە',
+                          onPressed: _clearMapSearch,
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                  filled: true,
+                  fillColor: const Color(0xFFF3F7F4),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
                   ),
-                ],
-              ),
-            ),
-
-            IconButton(
-              tooltip: 'گۆڕینی ڕووکار',
-              onPressed: () {
-                setState(() {
-                  _darkMap = !_darkMap;
-                });
-              },
-              icon: Icon(
-                _darkMap
-                    ? Icons.light_mode_rounded
-                    : Icons
-                        .dark_mode_rounded,
-              ),
-            ),
-
-            IconButton(
-              tooltip: 'نوێکردنەوە',
-              onPressed: _loadMapData,
-              icon: const Icon(
-                Icons.refresh_rounded,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(15),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
               ),
             ),
           ],

@@ -5,12 +5,28 @@ import '../security/nizik_network.dart';
 import '../models/shop.dart';
 
 class ShopService {
-  static Future<ShopMetadata> fetchMetadata() async {
+  static Future<ShopMetadata> fetchMetadata({
+    int? cityId,
+    int? regionId,
+    bool occupiedOnly = false,
+  }) async {
+    final params = <String, String>{
+      'action': 'metadata',
+    };
+
+    if (cityId != null) {
+      params['city_id'] = cityId.toString();
+    }
+    if (regionId != null) {
+      params['region_id'] = regionId.toString();
+    }
+    if (occupiedOnly) {
+      params['occupied_only'] = '1';
+    }
+
     final uri = NizikEndpoints.uri(
       '/api/shops_public.php',
-      queryParameters: {
-        'action': 'metadata',
-      },
+      queryParameters: params,
     );
 
     final response = await NizikNetwork.get(
@@ -65,6 +81,7 @@ class ShopService {
     String? type,
     int? cityId,
     int? regionId,
+    bool openNow = false,
   }) async {
     final params = <String, String>{
       'action': 'list',
@@ -84,6 +101,9 @@ class ShopService {
 
     if (regionId != null) {
       params['region_id'] = regionId.toString();
+    }
+    if (openNow) {
+      params['open_now'] = '1';
     }
 
     final uri = NizikEndpoints.uri(

@@ -21,6 +21,7 @@ dependencies:
   flutter_map_marker_cluster: 8.2.2
   firebase_core: ^4.14.0
   firebase_messaging: ^16.6.0
+  flutter_compass: ^0.8.1
 
 dev_dependencies:
   flutter_test:
@@ -31,6 +32,10 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  fonts:
+    - family: NizikSomar
+      fonts:
+        - asset: assets/fonts/font.ttf
 
 flutter_launcher_icons:
   android: true

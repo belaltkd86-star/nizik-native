@@ -1,26 +1,6 @@
 workflows:
-  android-release-apk:
-    name: Nizik Android Release APK
-    instance_type: linux_x2
-    max_build_duration: 60
-
-    environment:
-      flutter: stable
-
-    scripts:
-      - name: Flutter pub get
-        script: |
-          flutter pub get
-
-      - name: Build Android release APK
-        script: |
-          flutter build apk --release
-
-    artifacts:
-      - build/app/outputs/flutter-apk/app-release.apk
-
   ios-unsigned-ipa:
-    name: Nizik Native Unsigned IPA
+    name: Nizik iOS Unsigned IPA (Fast)
     instance_type: mac_mini_m2
     max_build_duration: 60
 
@@ -28,6 +8,11 @@ workflows:
       flutter: stable
       xcode: latest
       cocoapods: default
+
+    cache:
+      cache_paths:
+        - ~/.pub-cache
+        - $HOME/Library/Caches/CocoaPods
 
     scripts:
       - name: Flutter pub get
@@ -42,16 +27,63 @@ workflows:
 
       - name: Build unsigned iOS app
         script: |
-          flutter build ios --release --no-codesign
+          flutter build ios --release --no-codesign \
+            --build-name=1.0.0 \
+            --build-number=$PROJECT_BUILD_NUMBER
 
       - name: Create unsigned IPA
         script: |
-          rm -rf build/ios/ipa
-          mkdir -p build/ios/ipa/Payload
-          cp -R build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
-          cd build/ios/ipa
-          zip -qry Nizik-unsigned.ipa Payload
+          rm -rf build/ios/unsigned_ipa
+          mkdir -p build/ios/unsigned_ipa/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ios/unsigned_ipa/Payload/
+          cd build/ios/unsigned_ipa
+          zip -qry Nizik-V9-unsigned.ipa Payload
 
     artifacts:
-      - build/ios/ipa/Nizik-unsigned.ipa
+      - build/ios/unsigned_ipa/Nizik-V9-unsigned.ipa
       - build/ios/iphoneos/Runner.app
+      - /tmp/xcodebuild_logs/*.log
+
+  ios-signed-ipa:
+    name: Nizik iOS Signed IPA
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.nizik.nizikNative
+
+    cache:
+      cache_paths:
+        - ~/.pub-cache
+        - $HOME/Library/Caches/CocoaPods
+
+    scripts:
+      - name: Set up iOS code signing
+        script: |
+          xcode-project use-profiles
+
+      - name: Flutter pub get
+        script: |
+          flutter pub get
+
+      - name: Install CocoaPods
+        script: |
+          cd ios
+          pod install
+          cd ..
+
+      - name: Build signed IPA
+        script: |
+          flutter build ipa --release \
+            --build-name=1.0.0 \
+            --build-number=$PROJECT_BUILD_NUMBER \
+            --export-options-plist=/Users/builder/export_options.plist
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log

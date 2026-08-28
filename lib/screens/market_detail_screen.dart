@@ -4,6 +4,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/market_item.dart';
 import '../services/market_service.dart';
+import '../services/favorites_service.dart';
+import '../services/share_service.dart';
 import '../widgets/report_sheet.dart';
 
 class MarketDetailScreen extends StatefulWidget {
@@ -26,7 +28,12 @@ class _MarketDetailScreenState extends State<MarketDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _future = MarketService.fetchDetail(widget.itemId);
+    _future = _fetchDetail();
+  }
+
+
+  Future<MarketItemDetail> _fetchDetail() async {
+    return MarketService.fetchDetail(widget.itemId);
   }
 
   @override
@@ -61,6 +68,7 @@ class _MarketDetailScreenState extends State<MarketDetailScreen> {
     }
   }
 
+
   void _showMessage(String message) {
     if (!mounted) return;
 
@@ -74,7 +82,6 @@ class _MarketDetailScreenState extends State<MarketDetailScreen> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: const Color(0xFFF4F7F4),
         body: FutureBuilder<MarketItemDetail>(
           future: _future,
           builder: (context, snapshot) {
@@ -88,8 +95,7 @@ class _MarketDetailScreenState extends State<MarketDetailScreen> {
               return _DetailError(
                 onRetry: () {
                   setState(() {
-                    _future =
-                        MarketService.fetchDetail(widget.itemId);
+                    _future = _fetchDetail();
                   });
                 },
               );
@@ -102,9 +108,40 @@ class _MarketDetailScreenState extends State<MarketDetailScreen> {
                 SliverAppBar(
                   pinned: true,
                   expandedHeight: 330,
-                  backgroundColor: Colors.white,
-                  surfaceTintColor: Colors.white,
+                  backgroundColor: Theme.of(context).colorScheme.surface,
+                  surfaceTintColor: Colors.transparent,
                   actions: [
+                    ValueListenableBuilder(
+                      valueListenable: FavoritesService.contentNotifier,
+                      builder: (context, _, __) {
+                        final favorite =
+                            FavoritesService.isMarketFavorite(item.id);
+                        return IconButton(
+                          tooltip: favorite
+                              ? 'لابردن لە دڵخواز'
+                              : 'دڵخواز',
+                          onPressed: () =>
+                              FavoritesService.toggleMarketDetail(item),
+                          icon: Icon(
+                            favorite
+                                ? Icons.favorite_rounded
+                                : Icons.favorite_border_rounded,
+                            color: favorite
+                                ? const Color(0xFFE53935)
+                                : null,
+                          ),
+                        );
+                      },
+                    ),
+                    IconButton(
+                      tooltip: 'هاوبەشکردن',
+                      onPressed: () => NizikShareService.show(
+                        context,
+                        title: 'بازاڕ: ${item.title}',
+                        link: NizikShareService.marketLink(item.id),
+                      ),
+                      icon: const Icon(Icons.ios_share_rounded),
+                    ),
                     IconButton(
                       tooltip: 'ڕاپۆرتکردن',
                       onPressed: () => ReportSheet.show(
@@ -194,7 +231,7 @@ class _MarketDetailScreenState extends State<MarketDetailScreen> {
                             width: double.infinity,
                             padding: const EdgeInsets.all(18),
                             decoration: BoxDecoration(
-                              color: Colors.white,
+                              color: Theme.of(context).colorScheme.surface,
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: Column(
@@ -211,9 +248,9 @@ class _MarketDetailScreenState extends State<MarketDetailScreen> {
                                 const SizedBox(height: 10),
                                 Text(
                                   item.description,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     height: 1.9,
-                                    color: Colors.black87,
+                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                                   ),
                                 ),
                               ],
@@ -222,6 +259,9 @@ class _MarketDetailScreenState extends State<MarketDetailScreen> {
                         ],
 
                         const SizedBox(height: 18),
+
+                        if (item.phone != null || item.whatsapp != null)
+                          const SizedBox(height: 10),
 
                         Row(
                           children: [
@@ -412,7 +452,7 @@ class _InfoCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
@@ -436,8 +476,8 @@ class _InfoCard extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
-                    color: Colors.black54,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                     fontSize: 12,
                   ),
                 ),

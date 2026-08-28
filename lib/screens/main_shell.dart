@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
-import 'about_screen.dart';
 import 'home_screen.dart';
 import 'market_screen.dart';
+import 'services_screen.dart';
+import 'settings_screen.dart';
 import 'shop_map_screen.dart';
+import 'shops_screen.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -19,15 +21,20 @@ class _MainShellState extends State<MainShell> {
     setState(() => _index = index);
   }
 
+  void _openMarket() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const MarketScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
-      HomeScreen(
-        onOpenMarket: () => _goTo(2),
-      ),
-      const ShopMapScreen(),
-      const MarketScreen(),
-      const AboutScreen(),
+      HomeScreen(onOpenMarket: _openMarket),
+      ShopMapScreen(autoLocate: _index == 1),
+      const ShopsScreen(),
+      const ServicesScreen(),
+      const SettingsScreen(),
     ];
 
     return Directionality(
@@ -52,14 +59,19 @@ class _MainShellState extends State<MainShell> {
               label: 'نەخشە',
             ),
             NavigationDestination(
-              icon: Icon(Icons.shopping_bag_outlined),
-              selectedIcon: Icon(Icons.shopping_bag_rounded),
-              label: 'بازاڕ',
+              icon: Icon(Icons.storefront_outlined),
+              selectedIcon: Icon(Icons.storefront_rounded),
+              label: 'دووکانەکان',
             ),
             NavigationDestination(
-              icon: Icon(Icons.info_outline_rounded),
-              selectedIcon: Icon(Icons.info_rounded),
-              label: 'دەربارە',
+              icon: Icon(Icons.grid_view_outlined),
+              selectedIcon: Icon(Icons.grid_view_rounded),
+              label: 'خزمەتگوزاری',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.settings_outlined),
+              selectedIcon: Icon(Icons.settings_rounded),
+              label: 'سێتینگ',
             ),
           ],
         ),

@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../services/contact_service.dart';
+import '../services/theme_service.dart';
+
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
 
   static const String _instagramUsername = 'BILAL.REBWAR_';
-  static const String _whatsappNumber = '9647751011001';
 
   Future<void> _openUrl(BuildContext context, Uri uri) async {
     final opened = await launchUrl(
@@ -43,7 +45,7 @@ class AboutScreen extends StatelessWidget {
   Future<void> _openWhatsApp(BuildContext context) async {
     await _openUrl(
       context,
-      Uri.parse('https://wa.me/$_whatsappNumber'),
+      NizikContactService.whatsappUri(),
     );
   }
 
@@ -138,6 +140,38 @@ class AboutScreen extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             Text(
+              'ڕووکار',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: theme.colorScheme.outlineVariant,
+                ),
+              ),
+              child: SwitchListTile.adaptive(
+                value: theme.brightness == Brightness.dark,
+                onChanged: (value) => ThemeService.instance.setDark(value),
+                secondary: Icon(
+                  theme.brightness == Brightness.dark
+                      ? Icons.dark_mode_rounded
+                      : Icons.light_mode_rounded,
+                  color: theme.colorScheme.primary,
+                ),
+                title: const Text(
+                  'دارک مۆد',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                subtitle: const Text('ڕووکارەکە بۆ شەو و ڕۆژ بگۆڕە'),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
               'پەیوەندی',
               style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.w800,
@@ -154,7 +188,7 @@ class AboutScreen extends StatelessWidget {
             _ContactCard(
               icon: Icons.chat_rounded,
               title: 'WhatsApp',
-              value: '+964 775 101 1001',
+              value: NizikContactService.whatsappDisplay,
               onTap: () => _openWhatsApp(context),
             ),
             const SizedBox(height: 26),

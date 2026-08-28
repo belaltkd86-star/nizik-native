@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+
 class NizikColors {
   static const green = Color(0xFF059669);
   static const darkGreen = Color(0xFF047857);
@@ -11,6 +12,11 @@ class NizikColors {
   static const muted = Color(0xFF64748B);
   static const subtle = Color(0xFF94A3B8);
   static const line = Color(0xFFE2E8F0);
+
+  static const darkBackground = Color(0xFF07110E);
+  static const darkSurface = Color(0xFF101B17);
+  static const darkSurface2 = Color(0xFF16231E);
+  static const darkLine = Color(0xFF263A32);
 }
 
 class NizikMotion {
@@ -35,78 +41,126 @@ class NizikTheme {
       surface: NizikColors.surface,
     );
 
+    return _base(
+      scheme: scheme,
+      background: NizikColors.background,
+      surface: NizikColors.surface,
+      line: NizikColors.line,
+      input: Colors.white,
+      nav: Colors.white,
+      navIndicator: NizikColors.softGreen,
+    );
+  }
+
+  static ThemeData dark() {
+    final scheme = ColorScheme.fromSeed(
+      seedColor: NizikColors.mint,
+      brightness: Brightness.dark,
+      surface: NizikColors.darkSurface,
+    ).copyWith(
+      primary: NizikColors.mint,
+      secondary: NizikColors.green,
+      surface: NizikColors.darkSurface,
+      surfaceContainerHighest: NizikColors.darkSurface2,
+      outline: NizikColors.darkLine,
+    );
+
+    return _base(
+      scheme: scheme,
+      background: NizikColors.darkBackground,
+      surface: NizikColors.darkSurface,
+      line: NizikColors.darkLine,
+      input: NizikColors.darkSurface2,
+      nav: const Color(0xFF0D1713),
+      navIndicator: const Color(0xFF173C2C),
+    );
+  }
+
+  static ThemeData _base({
+    required ColorScheme scheme,
+    required Color background,
+    required Color surface,
+    required Color line,
+    required Color input,
+    required Color nav,
+    required Color navIndicator,
+  }) {
     final base = ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
-      scaffoldBackgroundColor: NizikColors.background,
+      scaffoldBackgroundColor: background,
+      brightness: scheme.brightness,
+      fontFamily: 'NizikSomar',
     );
 
     return base.copyWith(
       splashFactory: InkSparkle.splashFactory,
-      dividerColor: NizikColors.line,
+      dividerColor: line,
+      appBarTheme: AppBarTheme(
+        backgroundColor: background,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        foregroundColor: scheme.onSurface,
+      ),
       textTheme: base.textTheme.copyWith(
         headlineLarge: base.textTheme.headlineLarge?.copyWith(
-          color: NizikColors.ink,
           fontWeight: FontWeight.w900,
           height: 1.25,
         ),
         headlineMedium: base.textTheme.headlineMedium?.copyWith(
-          color: NizikColors.ink,
           fontWeight: FontWeight.w900,
           height: 1.3,
         ),
         titleLarge: base.textTheme.titleLarge?.copyWith(
-          color: NizikColors.ink,
           fontWeight: FontWeight.w900,
         ),
         titleMedium: base.textTheme.titleMedium?.copyWith(
-          color: NizikColors.ink,
           fontWeight: FontWeight.w800,
         ),
-        bodyLarge: base.textTheme.bodyLarge?.copyWith(
-          color: NizikColors.ink,
-          height: 1.65,
-        ),
-        bodyMedium: base.textTheme.bodyMedium?.copyWith(
-          color: NizikColors.muted,
-          height: 1.6,
-        ),
-        bodySmall: base.textTheme.bodySmall?.copyWith(
-          color: NizikColors.muted,
-          height: 1.5,
-        ),
+        bodyLarge: base.textTheme.bodyLarge?.copyWith(height: 1.65),
+        bodyMedium: base.textTheme.bodyMedium?.copyWith(height: 1.6),
+        bodySmall: base.textTheme.bodySmall?.copyWith(height: 1.5),
         labelLarge: base.textTheme.labelLarge?.copyWith(
           fontWeight: FontWeight.w900,
         ),
       ),
       cardTheme: CardThemeData(
-        color: Colors.white,
+        color: surface,
         elevation: 0,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(NizikRadius.large),
-          side: const BorderSide(color: NizikColors.line),
+          side: BorderSide(color: line),
         ),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: surface,
+        surfaceTintColor: Colors.transparent,
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: surface,
+        modalBackgroundColor: surface,
+        surfaceTintColor: Colors.transparent,
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: Colors.white,
+        fillColor: input,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 14,
           vertical: 14,
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(NizikRadius.medium),
-          borderSide: const BorderSide(color: NizikColors.line),
+          borderSide: BorderSide(color: line),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(NizikRadius.medium),
-          borderSide: const BorderSide(color: NizikColors.line),
+          borderSide: BorderSide(color: line),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(NizikRadius.medium),
-          borderSide: const BorderSide(
-            color: NizikColors.green,
+          borderSide: BorderSide(
+            color: scheme.primary,
             width: 1.4,
           ),
         ),
@@ -119,35 +173,31 @@ class NizikTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(NizikRadius.medium),
           ),
-          textStyle: const TextStyle(
-            fontWeight: FontWeight.w900,
-          ),
+          textStyle: const TextStyle(fontWeight: FontWeight.w900),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: NizikColors.green,
+          foregroundColor: scheme.primary,
           minimumSize: const Size(0, 46),
-          side: const BorderSide(color: NizikColors.green),
+          side: BorderSide(color: scheme.primary),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(NizikRadius.medium),
           ),
-          textStyle: const TextStyle(
-            fontWeight: FontWeight.w900,
-          ),
+          textStyle: const TextStyle(fontWeight: FontWeight.w900),
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
         height: 72,
-        backgroundColor: Colors.white,
-        indicatorColor: NizikColors.softGreen,
-        surfaceTintColor: Colors.white,
+        backgroundColor: nav,
+        indicatorColor: navIndicator,
+        surfaceTintColor: Colors.transparent,
         elevation: 12,
-        shadowColor: const Color(0x140F172A),
+        shadowColor: Colors.black.withValues(alpha: .16),
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           final selected = states.contains(WidgetState.selected);
           return TextStyle(
-            color: selected ? NizikColors.darkGreen : NizikColors.muted,
+            color: selected ? scheme.primary : scheme.onSurfaceVariant,
             fontSize: 10,
             fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
           );
