@@ -8,7 +8,7 @@ import 'package:flutter_compass/flutter_compass.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:latlong2/latlong.dart' hide Path;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -52,10 +52,7 @@ class _ShopMapScreenState extends State<ShopMapScreen>
   static const _privacyKey = 'nizik_map_privacy_v10';
   static const _approxKey = 'nizik_map_approx_v10';
   static const _shopsCacheKey = 'nizik_map_shops_cache_v10';
-  static const _trafficTemplate = String.fromEnvironment(
-    'NIZIK_TRAFFIC_TILE_URL',
-    defaultValue: '',
-  );
+  static const _trafficTemplate = '';
 
   final MapController _mapController = MapController();
   final TextEditingController _search = TextEditingController();
@@ -959,10 +956,16 @@ class _ShopMapScreenState extends State<ShopMapScreen>
                   SegmentedButton<_MapBaseLayer>(
                     segments: const [
                       ButtonSegment(value: _MapBaseLayer.street, icon: Icon(Icons.map_rounded), label: Text('Street')),
-                      ButtonSegment(value: _MapBaseLayer.satellite, icon: Icon(Icons.satellite_alt_rounded), label: Text('Satellite')),
                     ],
-                    selected: {_baseLayer},
-                    onSelectionChanged: (v) => update(() => _baseLayer = v.first),
+                    selected: const {_MapBaseLayer.street},
+                    onSelectionChanged: (_) => update(() => _baseLayer = _MapBaseLayer.street),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      'ئێستا نەخشەکە بە OpenStreetMap ـی بێ API key کار دەکات. Satellite و Traffic تا دانانی provider ـی تایبەتی NIZIK ناچالاکن.',
+                      style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    ),
                   ),
                   const SizedBox(height: 8),
                   SwitchListTile.adaptive(
@@ -1069,6 +1072,13 @@ class _ShopMapScreenState extends State<ShopMapScreen>
     return '$h:${m.toString().padLeft(2, '0')}';
   }
 
+  String? _distanceLabelTo(LatLng point) {
+    final current = _myLocation;
+    if (current == null) return null;
+    final meters = _distance.as(LengthUnit.Meter, current, point);
+    return _distanceText(meters);
+  }
+
   Color _businessColor(Shop shop) {
     if (shop.openingStatus != null && !shop.openingStatus!.isOpen) return const Color(0xFF94A3B8);
     final value = (shop.businessType ?? shop.typeLabel).codeUnits.fold<int>(0, (a, b) => a + b);
@@ -1118,19 +1128,13 @@ class _ShopMapScreenState extends State<ShopMapScreen>
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    // Nizik map intentionally uses public raster basemaps that do not require
-    // an API key. Esri's tile endpoints are used for a more reliable full-screen
-    // map than the previous CARTO setup, which could leave large blank areas on
-    // some Android emulators/devices.
-    final streetTemplate = isDark
-        ? 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}'
-        : 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}';
-    const darkReferenceTemplate =
-        'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}';
-
-    final baseTemplate = _baseLayer == _MapBaseLayer.satellite
-        ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-        : streetTemplate;
+    // HOTFIX 13: force one keyless provider during stabilization.
+    // No dart-define, no ArcGIS/Esri, no CARTO, no satellite, no traffic.
+    // This deliberately ignores all previous NIZIK_MAP_* environment values
+    // so an old launch configuration cannot inject a provider that returns
+    // branded "API KEY REQUIRED" tiles.
+    const baseTemplate = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+    const baseMaxNativeZoom = 19;
 
     return ColoredBox(
       color: isDark ? const Color(0xFF07110E) : const Color(0xFFEAF1ED),
@@ -1157,22 +1161,14 @@ class _ShopMapScreenState extends State<ShopMapScreen>
           TileLayer(
             urlTemplate: baseTemplate,
             userAgentPackageName: 'com.nizik.nizikNative',
-            maxNativeZoom: 19,
+            maxNativeZoom: baseMaxNativeZoom,
             tileProvider: NetworkTileProvider(),
           ),
-          if (isDark && _baseLayer == _MapBaseLayer.street)
-            TileLayer(
-              urlTemplate: darkReferenceTemplate,
-              userAgentPackageName: 'com.nizik.nizikNative',
-              maxNativeZoom: 19,
-              tileProvider: NetworkTileProvider(),
-            ),
-          if (_traffic && _trafficTemplate.isNotEmpty)
-            TileLayer(
-              urlTemplate: _trafficTemplate,
-              userAgentPackageName: 'com.nizik.nizikNative',
-              maxNativeZoom: 19,
-              tileProvider: NetworkTileProvider(),
+          if (isDark)
+            IgnorePointer(
+              child: ColoredBox(
+                color: const Color(0xFF06110D).withValues(alpha: .38),
+              ),
             ),
           if (_myLocation != null && _gpsAccuracy > 0)
             CircleLayer(circles: [
@@ -1221,30 +1217,23 @@ class _ShopMapScreenState extends State<ShopMapScreen>
                 final selected = _selectedShop?.slug == mapped.shop.slug;
                 return Marker(
                   point: mapped.point,
-                  width: selected ? 68 : 58,
-                  height: selected ? 74 : 64,
+                  width: selected ? 214 : 64,
+                  height: selected ? 82 : 70,
                   child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
                     onTap: () => _selectShop(mapped),
                     child: _BusinessTypePin(
                       shop: mapped.shop,
                       selected: selected,
                       color: _businessColor(mapped.shop),
+                      distanceLabel: _distanceLabelTo(mapped.point),
                     ),
                   ),
                 );
               }).toList(),
-              builder: (context, cluster) => Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: const LinearGradient(colors: [_mapGreen, _mapDarkGreen]),
-                  border: Border.all(color: isDark ? const Color(0xFF101B17) : Colors.white, width: 3),
-                  boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 14, offset: Offset(0, 5))],
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  '${cluster.length}',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
-                ),
+              builder: (context, cluster) => _NizikClusterPin(
+                count: cluster.length,
+                isDark: isDark,
               ),
             ),
           ),
@@ -1261,9 +1250,7 @@ class _ShopMapScreenState extends State<ShopMapScreen>
           ]),
           SimpleAttributionWidget(
             source: Text(
-              _baseLayer == _MapBaseLayer.satellite
-                  ? 'Esri World Imagery'
-                  : 'Esri basemap',
+              'OpenStreetMap contributors',
               style: TextStyle(
                 color: isDark ? Colors.white70 : const Color(0xFF334155),
                 fontSize: 9,
@@ -1514,103 +1501,196 @@ class _ShopMapScreenState extends State<ShopMapScreen>
     final shop = _selectedShop!;
     final route = _activeRoute;
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final isOpen = shop.openingStatus?.isOpen;
+    final point = _selectedPoint;
+    final distance = point == null ? null : _distanceLabelTo(point);
+
     return Positioned(
       right: 10,
       left: 10,
       bottom: MediaQuery.paddingOf(context).bottom + 8,
       child: Material(
-        color: theme.colorScheme.surface.withValues(alpha: .98),
-        borderRadius: BorderRadius.circular(28),
-        elevation: 14,
-        shadowColor: Colors.black26,
-        child: Padding(
-          padding: const EdgeInsets.all(13),
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(30),
+        elevation: 18,
+        shadowColor: Colors.black38,
+        child: Container(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface.withValues(alpha: .985),
+            borderRadius: BorderRadius.circular(30),
+            border: Border.all(
+              color: shop.isPinned
+                  ? const Color(0xFFD4A017).withValues(alpha: .55)
+                  : (shop.isVerified
+                      ? _mapGreen.withValues(alpha: .35)
+                      : theme.colorScheme.outlineVariant),
+              width: shop.isPinned || shop.isVerified ? 1.4 : 1,
+            ),
+          ),
+          clipBehavior: Clip.antiAlias,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Row(children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(17),
-                child: SizedBox(
-                  width: 62,
-                  height: 62,
-                  child: (shop.logoUrl ?? '').isNotEmpty
-                      ? CachedNetworkImage(imageUrl: shop.logoUrl!, fit: BoxFit.cover, errorWidget: (_, __, ___) => const _MapLogoFallback())
-                      : const _MapLogoFallback(),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: shop.isPinned
+                      ? const [Color(0xFF7A5811), Color(0xFFD4A017)]
+                      : const [_mapDarkGreen, _mapGreen],
                 ),
               ),
-              const SizedBox(width: 11),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              child: Row(children: [
+                const Text(
+                  'NIZIK MAP',
+                  textDirection: TextDirection.ltr,
+                  style: TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w900, letterSpacing: .6),
+                ),
+                const Spacer(),
+                if (shop.isVerified) const _MapStatusBadge(icon: Icons.verified_rounded, label: 'پشتڕاستکراوە', foreground: Colors.white),
+                if (shop.isVerified && shop.isPinned) const SizedBox(width: 6),
+                if (shop.isPinned) const _MapStatusBadge(icon: Icons.star_rounded, label: 'سپۆنسەر', foreground: Colors.white),
+              ]),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(13),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
                 Row(children: [
-                  Flexible(child: Text(shop.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 17, fontWeight: FontWeight.w900))),
-                  if (shop.isVerified) const Padding(padding: EdgeInsetsDirectional.only(start: 5), child: Icon(Icons.verified_rounded, color: _mapGreen, size: 17)),
-                  if (shop.isPinned) const Padding(padding: EdgeInsetsDirectional.only(start: 4), child: Icon(Icons.workspace_premium_rounded, color: Color(0xFFF59E0B), size: 17)),
+                  Container(
+                    width: 66,
+                    height: 66,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: _businessColor(shop).withValues(alpha: .35), width: 1.5),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: (shop.logoUrl ?? '').isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: shop.logoUrl!,
+                            fit: BoxFit.cover,
+                            errorWidget: (_, __, ___) => _MapLogoFallback(icon: shop.typeIcon),
+                          )
+                        : _MapLogoFallback(icon: shop.typeIcon),
+                  ),
+                  const SizedBox(width: 11),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      Flexible(child: Text(
+                        shop.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 17, fontWeight: FontWeight.w900),
+                      )),
+                      if (shop.isVerified) const Padding(
+                        padding: EdgeInsetsDirectional.only(start: 5),
+                        child: Icon(Icons.verified_rounded, color: _mapGreen, size: 18),
+                      ),
+                      if (shop.isPinned) const Padding(
+                        padding: EdgeInsetsDirectional.only(start: 4),
+                        child: Icon(Icons.star_rounded, color: Color(0xFFD4A017), size: 18),
+                      ),
+                    ]),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${shop.typeIcon} ${shop.typeLabel} • ${shop.locationLabel}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 10.5, fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(spacing: 6, runSpacing: 5, children: [
+                      if (isOpen != null)
+                        _MapInfoPill(
+                          icon: Icons.circle,
+                          label: isOpen ? 'کراوەیە' : 'داخراوە',
+                          color: isOpen ? const Color(0xFF16A34A) : const Color(0xFF94A3B8),
+                        ),
+                      if (distance != null)
+                        _MapInfoPill(icon: Icons.near_me_rounded, label: distance, color: const Color(0xFF2563EB)),
+                    ]),
+                  ])),
+                  IconButton(onPressed: _clearSelection, icon: const Icon(Icons.close_rounded)),
                 ]),
-                const SizedBox(height: 3),
-                Text('${shop.typeIcon} ${shop.typeLabel} • ${shop.locationLabel}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 10.5)),
-                if (isOpen != null) Text(isOpen ? 'کراوەیە' : 'داخراوە', style: TextStyle(color: isOpen ? _mapGreen : theme.colorScheme.error, fontWeight: FontWeight.w900, fontSize: 10.5)),
-              ])),
-              IconButton(onPressed: _clearSelection, icon: const Icon(Icons.close_rounded)),
-            ]),
-            if (route != null) ...[
-              const SizedBox(height: 10),
-              ClipRRect(borderRadius: BorderRadius.circular(99), child: LinearProgressIndicator(value: _routeProgress, minHeight: 6)),
-              const SizedBox(height: 9),
-              Row(children: [
-                Expanded(child: _RouteStat(label: 'دووری', value: _distanceText(route.distanceMeters))),
-                Expanded(child: _RouteStat(label: 'ETA', value: _durationText(route.durationSeconds))),
-                Expanded(child: _RouteStat(label: 'جۆر', value: _routeMode == NizikRouteMode.walking ? 'پیادە' : 'ئۆتۆمبێل')),
-                Expanded(child: _RouteStat(label: 'پێشکەوتن', value: '${(_routeProgress * 100).round()}%')),
-              ]),
-              if (_routeAlternatives.length > 1) ...[
-                const SizedBox(height: 7),
-                SizedBox(height: 35, child: ListView.separated(scrollDirection: Axis.horizontal, itemCount: _routeAlternatives.length, separatorBuilder: (_, __) => const SizedBox(width: 6), itemBuilder: (_, i) {
-                  final r = _routeAlternatives[i];
-                  return ChoiceChip(label: Text('${i + 1} • ${_distanceText(r.distanceMeters)}'), selected: i == _routeIndex, onSelected: (_) { setState(() => _routeIndex = i); _fitRoute(); });
-                })),
-              ],
-              const SizedBox(height: 8),
-              Row(children: [
-                Expanded(child: FilterChip(label: const Text('Follow'), avatar: const Icon(Icons.navigation_rounded, size: 16), selected: _followUser, onSelected: (v) => setState(() => _followUser = v))),
-                const SizedBox(width: 6),
-                Expanded(child: FilterChip(label: const Text('Auto reroute'), avatar: const Icon(Icons.alt_route_rounded, size: 16), selected: _autoReroute, onSelected: (v) => setState(() => _autoReroute = v))),
-                const SizedBox(width: 6),
-                IconButton.filledTonal(onPressed: _showAlongRoute, tooltip: 'لەسەر ڕێگا', icon: const Icon(Icons.add_road_rounded)),
-              ]),
-            ],
-            const SizedBox(height: 10),
-            Row(children: [
-              Expanded(child: FilledButton.icon(
-                onPressed: _routing ? null : () => _openRouteModeSheet(),
-                icon: _routing ? const SizedBox(width: 17, height: 17, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.directions_rounded),
-                label: Text(route == null ? 'ڕێگا' : 'گۆڕینی ڕێگا'),
-              )),
-              const SizedBox(width: 8),
-              IconButton.filledTonal(onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ShopDetailScreen(slug: shop.slug))), icon: const Icon(Icons.storefront_rounded), tooltip: 'پڕۆفایل'),
-              const SizedBox(width: 6),
-              IconButton.filledTonal(onPressed: () async {
-                final phone = shop.phone?.trim() ?? '';
-                if (phone.isEmpty) { _message('ژمارەی پەیوەندی بەردەست نییە.'); return; }
-                await launchUrl(Uri(scheme: 'tel', path: phone));
-              }, icon: const Icon(Icons.call_rounded), tooltip: 'پەیوەندی'),
-              const SizedBox(width: 6),
-              IconButton.filledTonal(
-                onPressed: () => ReportSheet.show(
-                  context,
-                  targetType: 'shop',
-                  targetId: shop.id,
-                  targetSlug: shop.slug,
-                  reasons: const [
-                    'شوێنی دووکان لە نەخشە هەڵەیە',
-                    'دووکان گواستراوەتەوە',
-                    'ئەم شوێنە هی ئەم دووکانە نییە',
-                    'ڕێنمایی گەیشتن هەڵەیە',
-                    'هۆکاری تر',
+                if (route != null) ...[
+                  const SizedBox(height: 11),
+                  ClipRRect(borderRadius: BorderRadius.circular(99), child: LinearProgressIndicator(value: _routeProgress, minHeight: 6)),
+                  const SizedBox(height: 9),
+                  Row(children: [
+                    Expanded(child: _RouteStat(label: 'دووری', value: _distanceText(route.distanceMeters))),
+                    Expanded(child: _RouteStat(label: 'ETA', value: _durationText(route.durationSeconds))),
+                    Expanded(child: _RouteStat(label: 'جۆر', value: _routeMode == NizikRouteMode.walking ? 'پیادە' : 'ئۆتۆمبێل')),
+                    Expanded(child: _RouteStat(label: 'پێشکەوتن', value: '${(_routeProgress * 100).round()}%')),
+                  ]),
+                  if (_routeAlternatives.length > 1) ...[
+                    const SizedBox(height: 7),
+                    SizedBox(
+                      height: 35,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _routeAlternatives.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 6),
+                        itemBuilder: (_, i) {
+                          final r = _routeAlternatives[i];
+                          return ChoiceChip(
+                            label: Text('${i + 1} • ${_distanceText(r.distanceMeters)}'),
+                            selected: i == _routeIndex,
+                            onSelected: (_) { setState(() => _routeIndex = i); _fitRoute(); },
+                          );
+                        },
+                      ),
+                    ),
                   ],
-                ),
-                icon: const Icon(Icons.flag_outlined),
-                tooltip: 'ڕاپۆرتی شوێنی هەڵە',
-              ),
-            ]),
+                  const SizedBox(height: 8),
+                  Row(children: [
+                    Expanded(child: FilterChip(label: const Text('Follow'), avatar: const Icon(Icons.navigation_rounded, size: 16), selected: _followUser, onSelected: (v) => setState(() => _followUser = v))),
+                    const SizedBox(width: 6),
+                    Expanded(child: FilterChip(label: const Text('Auto reroute'), avatar: const Icon(Icons.alt_route_rounded, size: 16), selected: _autoReroute, onSelected: (v) => setState(() => _autoReroute = v))),
+                    const SizedBox(width: 6),
+                    IconButton.filledTonal(onPressed: _showAlongRoute, tooltip: 'لەسەر ڕێگا', icon: const Icon(Icons.add_road_rounded)),
+                  ]),
+                ],
+                const SizedBox(height: 11),
+                Row(children: [
+                  Expanded(child: FilledButton.icon(
+                    onPressed: _routing ? null : () => _openRouteModeSheet(),
+                    icon: _routing
+                        ? const SizedBox(width: 17, height: 17, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.directions_rounded),
+                    label: Text(route == null ? 'ڕێگا' : 'گۆڕینی ڕێگا'),
+                  )),
+                  const SizedBox(width: 8),
+                  IconButton.filledTonal(
+                    onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ShopDetailScreen(slug: shop.slug))),
+                    icon: const Icon(Icons.storefront_rounded),
+                    tooltip: 'پڕۆفایل',
+                  ),
+                  const SizedBox(width: 6),
+                  IconButton.filledTonal(onPressed: () async {
+                    final phone = shop.phone?.trim() ?? '';
+                    if (phone.isEmpty) { _message('ژمارەی پەیوەندی بەردەست نییە.'); return; }
+                    await launchUrl(Uri(scheme: 'tel', path: phone));
+                  }, icon: const Icon(Icons.call_rounded), tooltip: 'پەیوەندی'),
+                  const SizedBox(width: 6),
+                  IconButton.filledTonal(
+                    onPressed: () => ReportSheet.show(
+                      context,
+                      targetType: 'shop',
+                      targetId: shop.id,
+                      targetSlug: shop.slug,
+                      reasons: const [
+                        'شوێنی دووکان لە نەخشە هەڵەیە',
+                        'دووکان گواستراوەتەوە',
+                        'ئەم شوێنە هی ئەم دووکانە نییە',
+                        'ڕێنمایی گەیشتن هەڵەیە',
+                        'هۆکاری تر',
+                      ],
+                    ),
+                    icon: const Icon(Icons.flag_outlined),
+                    tooltip: 'ڕاپۆرتی شوێنی هەڵە',
+                  ),
+                ]),
+              ]),
+            ),
           ]),
         ),
       ),
@@ -1660,57 +1740,191 @@ class _MapSuggestion {
 }
 
 class _BusinessTypePin extends StatelessWidget {
-  const _BusinessTypePin({required this.shop, required this.selected, required this.color});
+  const _BusinessTypePin({
+    required this.shop,
+    required this.selected,
+    required this.color,
+    this.distanceLabel,
+  });
+
   final Shop shop;
   final bool selected;
   final Color color;
+  final String? distanceLabel;
 
   @override
   Widget build(BuildContext context) {
     final open = shop.openingStatus?.isOpen;
-    final fill = open == false ? const Color(0xFF94A3B8) : color;
+    final closed = open == false;
+    final fill = closed ? const Color(0xFF7C8798) : color;
+    final theme = Theme.of(context);
+
     return AnimatedScale(
-      scale: selected ? 1.12 : 1,
+      scale: selected ? 1.02 : 1,
       duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutBack,
+      child: selected
+          ? Row(
+              textDirection: TextDirection.ltr,
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _NizikDropPin(
+                  shop: shop,
+                  fill: fill,
+                  selected: true,
+                  closed: closed,
+                ),
+                Transform.translate(
+                  offset: const Offset(-7, -2),
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 142),
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surface.withValues(alpha: .96),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: shop.isPinned
+                            ? const Color(0xFFD4A017).withValues(alpha: .55)
+                            : fill.withValues(alpha: .38),
+                      ),
+                      boxShadow: const [
+                        BoxShadow(color: Color(0x33000000), blurRadius: 14, offset: Offset(0, 5)),
+                      ],
+                    ),
+                    child: Directionality(
+                      textDirection: TextDirection.rtl,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(mainAxisSize: MainAxisSize.min, children: [
+                            Flexible(
+                              child: Text(
+                                shop.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: theme.colorScheme.onSurface,
+                                  fontSize: 11.2,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            if (shop.isVerified) const Padding(
+                              padding: EdgeInsetsDirectional.only(start: 4),
+                              child: Icon(Icons.verified_rounded, size: 14, color: _mapGreen),
+                            ),
+                            if (shop.isPinned) const Padding(
+                              padding: EdgeInsetsDirectional.only(start: 3),
+                              child: Icon(Icons.star_rounded, size: 14, color: Color(0xFFD4A017)),
+                            ),
+                          ]),
+                          const SizedBox(height: 3),
+                          Text(
+                            '${open == true ? 'کراوە' : open == false ? 'داخراوە' : shop.typeLabel}${distanceLabel == null ? '' : ' • $distanceLabel'}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: open == true
+                                  ? const Color(0xFF16A34A)
+                                  : (open == false ? const Color(0xFF94A3B8) : theme.colorScheme.onSurfaceVariant),
+                              fontSize: 9.3,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : _NizikDropPin(
+              shop: shop,
+              fill: fill,
+              selected: false,
+              closed: closed,
+            ),
+    );
+  }
+}
+
+class _NizikDropPin extends StatelessWidget {
+  const _NizikDropPin({
+    required this.shop,
+    required this.fill,
+    required this.selected,
+    required this.closed,
+  });
+
+  final Shop shop;
+  final Color fill;
+  final bool selected;
+  final bool closed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: selected ? 66 : 60,
+      height: selected ? 74 : 68,
       child: Stack(
         clipBehavior: Clip.none,
         alignment: Alignment.topCenter,
         children: [
-          Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: fill,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 3),
-                boxShadow: const [BoxShadow(color: Color(0x44000000), blurRadius: 10, offset: Offset(0, 4))],
-              ),
-              alignment: Alignment.center,
-              child: Text(shop.typeIcon, style: TextStyle(fontSize: 22, color: open == false ? Colors.white70 : Colors.white)),
+          CustomPaint(
+            size: Size(selected ? 58 : 54, selected ? 69 : 64),
+            painter: _NizikPinPainter(
+              color: fill,
+              borderColor: Colors.white,
+              closed: closed,
             ),
-            Transform.translate(
-              offset: const Offset(0, -5),
-              child: Transform.rotate(
-                angle: math.pi / 4,
-                child: Container(width: 12, height: 12, color: fill),
-              ),
-            ),
-          ]),
-          if (shop.isVerified)
-            Positioned(left: 0, top: -2, child: Container(decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle), child: const Icon(Icons.verified_rounded, color: _mapGreen, size: 18))),
-          if (shop.isPinned)
-            Positioned(right: 0, top: -2, child: Container(decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle), child: const Icon(Icons.workspace_premium_rounded, color: Color(0xFFF59E0B), size: 18))),
+          ),
           Positioned(
-            bottom: 1,
-            right: 5,
+            top: selected ? 10 : 9,
             child: Container(
-              width: 10,
-              height: 10,
+              width: selected ? 36 : 33,
+              height: selected ? 36 : 33,
+              alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: open == null ? const Color(0xFFCBD5E1) : (open ? const Color(0xFF22C55E) : const Color(0xFFEF4444)),
+                color: Colors.white.withValues(alpha: closed ? .84 : .98),
                 shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 2),
+              ),
+              child: Text(
+                shop.typeIcon,
+                style: TextStyle(fontSize: selected ? 19 : 17),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 1,
+            right: 1,
+            child: _TinyMapBadge(
+              color: shop.isPinned ? const Color(0xFFD4A017) : (shop.isVerified ? _mapGreen : (closed ? const Color(0xFF94A3B8) : const Color(0xFF22C55E))),
+              icon: shop.isPinned
+                  ? Icons.star_rounded
+                  : (shop.isVerified ? Icons.check_rounded : Icons.circle),
+            ),
+          ),
+          if (shop.isVerified && shop.isPinned)
+            const Positioned(
+              top: 22,
+              right: -1,
+              child: _TinyMapBadge(color: _mapGreen, icon: Icons.check_rounded),
+            ),
+          Positioned(
+            bottom: selected ? 5 : 5,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFF053B2D),
+                borderRadius: BorderRadius.circular(99),
+                border: Border.all(color: Colors.white, width: 1),
+              ),
+              child: const Text(
+                'N',
+                textDirection: TextDirection.ltr,
+                style: TextStyle(color: Colors.white, fontSize: 7.5, fontWeight: FontWeight.w900),
               ),
             ),
           ),
@@ -1718,6 +1932,149 @@ class _BusinessTypePin extends StatelessWidget {
       ),
     );
   }
+}
+
+class _NizikPinPainter extends CustomPainter {
+  const _NizikPinPainter({required this.color, required this.borderColor, required this.closed});
+  final Color color;
+  final Color borderColor;
+  final bool closed;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.width / 2);
+    final radius = (size.width / 2) - 4;
+    final tipY = size.height - 4;
+
+    final path = Path()
+      ..moveTo(center.dx, tipY)
+      ..cubicTo(center.dx - 8, size.height - 16, 4, center.dy + 12, 4, center.dy)
+      ..arcToPoint(
+        Offset(size.width - 4, center.dy),
+        radius: Radius.circular(radius),
+        clockwise: true,
+      )
+      ..cubicTo(size.width - 4, center.dy + 12, center.dx + 8, size.height - 16, center.dx, tipY)
+      ..close();
+
+    final shadow = Paint()
+      ..color = const Color(0x44000000)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
+    canvas.save();
+    canvas.translate(0, 3);
+    canvas.drawPath(path, shadow);
+    canvas.restore();
+
+    final fillPaint = Paint()..color = closed ? color.withValues(alpha: .78) : color;
+    canvas.drawPath(path, fillPaint);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = borderColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.4,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _NizikPinPainter oldDelegate) =>
+      oldDelegate.color != color || oldDelegate.borderColor != borderColor || oldDelegate.closed != closed;
+}
+
+class _TinyMapBadge extends StatelessWidget {
+  const _TinyMapBadge({required this.color, required this.icon});
+  final Color color;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 18,
+        height: 18,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 2),
+          boxShadow: const [BoxShadow(color: Color(0x22000000), blurRadius: 5)],
+        ),
+        alignment: Alignment.center,
+        child: Icon(icon, color: Colors.white, size: icon == Icons.circle ? 6 : 10),
+      );
+}
+
+class _NizikClusterPin extends StatelessWidget {
+  const _NizikClusterPin({required this.count, required this.isDark});
+  final int count;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: const LinearGradient(
+            colors: [Color(0xFF0B5D3B), Color(0xFF059669)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          border: Border.all(color: isDark ? const Color(0xFF101B17) : Colors.white, width: 3),
+          boxShadow: const [BoxShadow(color: Color(0x3A000000), blurRadius: 15, offset: Offset(0, 5))],
+        ),
+        padding: const EdgeInsets.all(4),
+        child: Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white.withValues(alpha: .35), width: 1),
+          ),
+          alignment: Alignment.center,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Text('N', textDirection: TextDirection.ltr, style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w900)),
+            Text('$count', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900, height: .9)),
+          ]),
+        ),
+      );
+}
+
+class _MapStatusBadge extends StatelessWidget {
+  const _MapStatusBadge({required this.icon, required this.label, required this.foreground});
+  final IconData icon;
+  final String label;
+  final Color foreground;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: .14),
+          borderRadius: BorderRadius.circular(99),
+          border: Border.all(color: Colors.white24),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 12, color: foreground),
+          const SizedBox(width: 3),
+          Text(label, style: TextStyle(color: foreground, fontSize: 8.5, fontWeight: FontWeight.w900)),
+        ]),
+      );
+}
+
+class _MapInfoPill extends StatelessWidget {
+  const _MapInfoPill({required this.icon, required this.label, required this.color});
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: .10),
+          borderRadius: BorderRadius.circular(99),
+          border: Border.all(color: color.withValues(alpha: .22)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, color: color, size: icon == Icons.circle ? 7 : 13),
+          const SizedBox(width: 4),
+          Text(label, style: TextStyle(color: color, fontSize: 9.5, fontWeight: FontWeight.w900)),
+        ]),
+      );
 }
 
 class _UserLocationPin extends StatelessWidget {
@@ -1781,9 +2138,10 @@ class _RouteStat extends StatelessWidget {
 }
 
 class _MapLogoFallback extends StatelessWidget {
-  const _MapLogoFallback();
+  const _MapLogoFallback({this.icon = '🏪'});
+  final String icon;
   @override
-  Widget build(BuildContext context) => ColoredBox(color: Theme.of(context).colorScheme.primaryContainer, child: Icon(Icons.storefront_rounded, color: Theme.of(context).colorScheme.primary, size: 30));
+  Widget build(BuildContext context) => ColoredBox(color: Theme.of(context).colorScheme.primaryContainer, child: Center(child: Text(icon, style: const TextStyle(fontSize: 26))));
 }
 
 class _MapError extends StatelessWidget {

@@ -501,21 +501,19 @@ class _ShopProfileSheetState
               final active =
                   category.categoryId == selectedId;
 
+              final theme = Theme.of(context);
               return ChoiceChip(
                 selected: active,
                 showCheckmark: false,
                 selectedColor: _green,
-                backgroundColor: Colors.white,
+                backgroundColor: theme.colorScheme.surface,
                 side: BorderSide(
-                  color:
-                      active ? _green : _line,
+                  color: active ? _green : theme.colorScheme.outlineVariant,
                 ),
                 label: Text(
                   '${category.icon.isEmpty ? '•' : category.icon} ${category.name}',
                   style: TextStyle(
-                    color: active
-                        ? Colors.white
-                        : _ink,
+                    color: active ? Colors.white : theme.colorScheme.onSurface,
                     fontWeight: FontWeight.w800,
                     fontSize: 11,
                   ),
@@ -819,7 +817,7 @@ class _ProfileHero extends StatelessWidget {
                 border: Border.all(color: Colors.white24),
               ),
               child: const Text(
-                'NIZIK • نزیک',
+                'NIZIK SHOP • نزیک',
                 textDirection: TextDirection.ltr,
                 style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: .4),
               ),
@@ -841,7 +839,7 @@ class _ProfileHero extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: Colors.white, width: 3),
+                        border: Border.all(color: profile.isPinned ? const Color(0xFFFFD666) : (verified ? const Color(0xFF6EE7B7) : Colors.white), width: 3),
                         boxShadow: const [BoxShadow(color: Color(0x44000000), blurRadius: 18, offset: Offset(0, 7))],
                       ),
                       child: logo.isEmpty
@@ -892,13 +890,22 @@ class _ProfileHero extends StatelessWidget {
                   runSpacing: 7,
                   children: [
                     if (profile.isPinned)
-                      const _HeroBadge(icon: Icons.push_pin_rounded, label: 'پێشکەوتوو'),
+                      const _HeroBadge(
+                        icon: Icons.star_rounded,
+                        label: 'سپۆنسەر',
+                        color: Color(0xFFD4A017),
+                      ),
                     if (verified)
-                      const _HeroBadge(icon: Icons.verified_rounded, label: 'پشتڕاستکراوە'),
+                      const _HeroBadge(
+                        icon: Icons.verified_rounded,
+                        label: 'پشتڕاستکراوە',
+                        color: Color(0xFF059669),
+                      ),
                     if (opening != null)
                       _HeroBadge(
                         icon: opening.isOpen ? Icons.schedule_rounded : Icons.lock_clock_rounded,
                         label: opening.isOpen ? 'ئێستا کراوەیە' : 'ئێستا داخراوە',
+                        color: opening.isOpen ? const Color(0xFF16A34A) : const Color(0xFF64748B),
                       ),
                   ],
                 ),
@@ -929,24 +936,26 @@ class _ProfileHero extends StatelessWidget {
 }
 
 class _HeroBadge extends StatelessWidget {
-  const _HeroBadge({required this.icon, required this.label});
+  const _HeroBadge({required this.icon, required this.label, required this.color});
   final IconData icon;
   final String label;
+  final Color color;
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: .30),
+          color: color.withValues(alpha: .90),
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: Colors.white24),
+          border: Border.all(color: Colors.white.withValues(alpha: .38)),
+          boxShadow: const [BoxShadow(color: Color(0x26000000), blurRadius: 8, offset: Offset(0, 3))],
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, color: Colors.white, size: 14),
             const SizedBox(width: 5),
-            Text(label, style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w800)),
+            Text(label, style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w900)),
           ],
         ),
       );
