@@ -1,11 +1,11 @@
 workflows:
   ios-unsigned-ipa:
-    name: Nizik iOS Unsigned IPA (Fast)
+    name: Nizik V10 Unsigned IPA
     instance_type: mac_mini_m2
     max_build_duration: 60
 
     environment:
-      flutter: stable
+      flutter: 3.44.3
       xcode: latest
       cocoapods: default
 
@@ -15,6 +15,10 @@ workflows:
         - $HOME/Library/Caches/CocoaPods
 
     scripts:
+      - name: Flutter clean
+        script: |
+          flutter clean
+
       - name: Flutter pub get
         script: |
           flutter pub get
@@ -37,53 +41,9 @@ workflows:
           mkdir -p build/ios/unsigned_ipa/Payload
           cp -R build/ios/iphoneos/Runner.app build/ios/unsigned_ipa/Payload/
           cd build/ios/unsigned_ipa
-          zip -qry Nizik-V10-PRO-unsigned.ipa Payload
+          zip -qry Nizik-V10-unsigned.ipa Payload
 
     artifacts:
-      - build/ios/unsigned_ipa/Nizik-V10-PRO-unsigned.ipa
+      - build/ios/unsigned_ipa/Nizik-V10-unsigned.ipa
       - build/ios/iphoneos/Runner.app
-      - /tmp/xcodebuild_logs/*.log
-
-  ios-signed-ipa:
-    name: Nizik iOS Signed IPA
-    instance_type: mac_mini_m2
-    max_build_duration: 60
-
-    environment:
-      flutter: stable
-      xcode: latest
-      cocoapods: default
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.nizik.nizikNative
-
-    cache:
-      cache_paths:
-        - ~/.pub-cache
-        - $HOME/Library/Caches/CocoaPods
-
-    scripts:
-      - name: Set up iOS code signing
-        script: |
-          xcode-project use-profiles
-
-      - name: Flutter pub get
-        script: |
-          flutter pub get
-
-      - name: Install CocoaPods
-        script: |
-          cd ios
-          pod install
-          cd ..
-
-      - name: Build signed IPA
-        script: |
-          flutter build ipa --release \
-            --build-name=1.0.0 \
-            --build-number=$PROJECT_BUILD_NUMBER \
-            --export-options-plist=/Users/builder/export_options.plist
-
-    artifacts:
-      - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
