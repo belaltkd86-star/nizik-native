@@ -59,10 +59,16 @@ class NizikTheme {
       surface: NizikColors.darkSurface,
     ).copyWith(
       primary: NizikColors.mint,
+      onPrimary: const Color(0xFF052E20),
       secondary: NizikColors.green,
       surface: NizikColors.darkSurface,
+      onSurface: const Color(0xFFF1FAF5),
+      onSurfaceVariant: const Color(0xFFB7CEC1),
       surfaceContainerHighest: NizikColors.darkSurface2,
       outline: NizikColors.darkLine,
+      outlineVariant: const Color(0xFF30483D),
+      errorContainer: const Color(0xFF4C1D24),
+      onErrorContainer: const Color(0xFFFFDAD6),
     );
 
     return _base(

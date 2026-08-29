@@ -6,10 +6,12 @@ import 'package:flutter/material.dart';
 import '../models/app_feature.dart';
 import '../models/global_search_result.dart';
 import '../models/module_spec.dart';
+import '../models/shop.dart';
 import '../security/nizik_network.dart';
 import '../services/app_config_service.dart';
 import '../services/global_search_service.dart';
 import '../services/location_preference_service.dart';
+import '../services/shop_service.dart';
 import 'market_detail_screen.dart';
 import 'module_detail_screen.dart';
 import 'shop_detail_screen.dart';
@@ -95,13 +97,49 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = e.toString().replaceFirst('Exception: ', '');
-      });
+      // Fallback to the already-established shops_public endpoint so Home search
+      // remains useful even when /api/global_search.php has not been deployed yet.
+      try {
+        var shops = await ShopService.fetchShops(
+          query: query,
+          cityId: location.cityId,
+          regionId: location.regionId,
+        );
+        if (shops.isEmpty && (location.cityId != null || location.regionId != null)) {
+          shops = await ShopService.fetchShops(query: query);
+        }
+        final fallback = shops.map(_shopResult).toList(growable: false);
+        if (!mounted) return;
+        setState(() {
+          _results = fallback;
+          _loading = false;
+          _error = fallback.isEmpty
+              ? 'هیچ ئەنجامێک بۆ ئەم گەڕانە نەدۆزرایەوە.'
+              : null;
+        });
+      } catch (_) {
+        if (!mounted) return;
+        setState(() {
+          _loading = false;
+          _error = 'گەڕان ئێستا بەردەست نییە. پەیوەندی ئینتەرنێت/سێرڤەر بپشکنە.';
+        });
+      }
     }
   }
+
+  GlobalSearchResult _shopResult(Shop shop) => GlobalSearchResult(
+        kind: 'shop',
+        id: shop.id,
+        slug: shop.slug,
+        featureKey: '',
+        title: shop.name,
+        subtitle: shop.typeLabel,
+        location: shop.locationLabel,
+        imageUrl: shop.logoUrl ?? '',
+        emoji: shop.typeIcon,
+        verified: shop.isVerified,
+        featured: shop.isPinned,
+      );
 
   ModuleSpec _specFor(GlobalSearchResult result) {
     final known = ModuleRegistry.byKey(result.featureKey);

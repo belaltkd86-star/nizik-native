@@ -83,7 +83,6 @@ class _ShopProfileSheetState
       final shop =
           widget.sourceShop ?? profile.toShop();
 
-      await _store.addRecent(shop);
       final favorite =
           await _store.isFavorite(shop);
 
@@ -259,9 +258,9 @@ class _ShopProfileSheetState
       textDirection: TextDirection.rtl,
       child: Container(
         height: height,
-        decoration: const BoxDecoration(
-          color: _background,
-          borderRadius: BorderRadius.vertical(
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(
             top: Radius.circular(30),
           ),
         ),
@@ -304,11 +303,11 @@ class _ShopProfileSheetState
                 color: Colors.redAccent,
               ),
               const SizedBox(height: 12),
-              const Text(
+              Text(
                 'نەتوانرا پڕۆفایلەکە بهێنرێت',
                 style: TextStyle(
                   fontWeight: FontWeight.w900,
-                  color: _ink,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
               const SizedBox(height: 12),
@@ -343,6 +342,7 @@ class _ShopProfileSheetState
         children: [
           _ProfileHero(
             profile: profile,
+            sourceShop: widget.sourceShop,
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(
@@ -354,26 +354,26 @@ class _ShopProfileSheetState
             child: Column(
               children: [
                 _QuickActions(
-                  hasMap:
-                      profile.googleMapsUrl.isNotEmpty,
+                  phone: profile.phone,
+                  hasMap: profile.googleMapsUrl.isNotEmpty,
+                  onCall: profile.phone.trim().isEmpty
+                      ? null
+                      : () => _openExternal('tel:${profile.phone.trim()}'),
                   onMap: profile.googleMapsUrl.isEmpty
                       ? null
                       : () {
                           _openExternal(
-                            normalizeNizikUrl(
-                              profile.googleMapsUrl,
-                            ),
+                            normalizeNizikUrl(profile.googleMapsUrl),
                           );
                         },
                   onShare: _shareProfile,
-                  onContact:
-                      profile.socialLinks.isEmpty
-                          ? null
-                          : () {
-                              setState(() {
-                                _selectedTab = 1;
-                              });
-                            },
+                  onContact: profile.socialLinks.isEmpty
+                      ? null
+                      : () {
+                          setState(() {
+                            _selectedTab = 1;
+                          });
+                        },
                 ),
                 if (profile.bio.isNotEmpty) ...[
                   const SizedBox(height: 16),
@@ -699,8 +699,9 @@ class _SheetHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Container(
-      color: Colors.white,
+      color: theme.colorScheme.surface,
       padding: const EdgeInsets.fromLTRB(
         8,
         6,
@@ -720,7 +721,7 @@ class _SheetHeader extends StatelessWidget {
             width: 42,
             height: 5,
             decoration: BoxDecoration(
-              color: const Color(0xFFCBD5E1),
+              color: theme.colorScheme.outlineVariant,
               borderRadius:
                   BorderRadius.circular(999),
             ),
@@ -753,183 +754,166 @@ class _SheetHeader extends StatelessWidget {
 
 class _ProfileHero extends StatelessWidget {
   final ShopProfileData profile;
+  final Shop? sourceShop;
 
   const _ProfileHero({
     required this.profile,
+    this.sourceShop,
   });
 
   @override
   Widget build(BuildContext context) {
-    final logo =
-        normalizeNizikUrl(profile.logoUrl);
+    final logo = normalizeNizikUrl(profile.logoUrl);
+    final gallery = profile.galleryUrls;
+    final cover = gallery.isNotEmpty ? gallery.first : logo;
+    final verified = sourceShop?.isVerified ?? false;
+    final opening = sourceShop?.openingStatus;
 
     return SizedBox(
-      height: 290,
+      height: 320,
       child: Stack(
         fit: StackFit.expand,
         children: [
-          if (logo.isNotEmpty)
+          if (cover.isNotEmpty)
             Image.network(
-              logo,
+              cover,
               fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) {
-                return Container(
-                  color: _darkGreen,
-                );
-              },
+              errorBuilder: (_, __, ___) => Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF064E3B), Color(0xFF059669)],
+                    begin: Alignment.topRight,
+                    end: Alignment.bottomLeft,
+                  ),
+                ),
+              ),
             )
           else
             Container(
-              color: _darkGreen,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF064E3B), Color(0xFF059669)],
+                  begin: Alignment.topRight,
+                  end: Alignment.bottomLeft,
+                ),
+              ),
             ),
-          Container(
-            decoration: const BoxDecoration(
+          const DecoratedBox(
+            decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [
-                  Color(0x99047857),
-                  Color(0xF2059669),
-                ],
+                colors: [Color(0x22000000), Color(0x22000000), Color(0xDD052E25)],
+                stops: [0, .42, 1],
+              ),
+            ),
+          ),
+          Positioned(
+            left: 18,
+            top: 18,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: .28),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: Colors.white24),
+              ),
+              child: const Text(
+                'NIZIK • نزیک',
+                textDirection: TextDirection.ltr,
+                style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: .4),
               ),
             ),
           ),
           Padding(
-            padding: const EdgeInsets.all(22),
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 22),
             child: Column(
-              mainAxisAlignment:
-                  MainAxisAlignment.end,
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.end,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color:
-                        const Color(0x33FFFFFF),
-                    borderRadius:
-                        BorderRadius.circular(999),
-                    border: Border.all(
-                      color:
-                          const Color(0x55FFFFFF),
-                    ),
-                  ),
-                  child: const Text(
-                    '●  نزیک • پڕۆفایلی دوکان',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Container(
-                  width: 76,
-                  height: 76,
-                  clipBehavior: Clip.antiAlias,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius:
-                        BorderRadius.circular(22),
-                    border: Border.all(
-                      color: Colors.white,
-                      width: 3,
-                    ),
-                  ),
-                  child: logo.isEmpty
-                      ? const Icon(
-                          Icons.storefront_rounded,
-                          color: _green,
-                          size: 36,
-                        )
-                      : Image.network(
-                          logo,
-                          fit: BoxFit.cover,
-                          errorBuilder:
-                              (_, __, ___) {
-                            return const Icon(
-                              Icons
-                                  .storefront_rounded,
-                              color: _green,
-                              size: 36,
-                            );
-                          },
-                        ),
-                ),
-                const SizedBox(height: 12),
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Flexible(
-                      child: Text(
-                        profile.name.isEmpty
-                            ? 'دوکان'
-                            : profile.name,
-                        maxLines: 1,
-                        overflow:
-                            TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 23,
-                          fontWeight:
-                              FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
                     Container(
-                      width: 20,
-                      height: 20,
-                      decoration:
-                          const BoxDecoration(
-                        color:
-                            Color(0xFF34D399),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.check_rounded,
+                      width: 82,
+                      height: 82,
+                      clipBehavior: Clip.antiAlias,
+                      decoration: BoxDecoration(
                         color: Colors.white,
-                        size: 14,
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(color: Colors.white, width: 3),
+                        boxShadow: const [BoxShadow(color: Color(0x44000000), blurRadius: 18, offset: Offset(0, 7))],
+                      ),
+                      child: logo.isEmpty
+                          ? const Icon(Icons.storefront_rounded, color: _green, size: 38)
+                          : Image.network(
+                              logo,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => const Icon(Icons.storefront_rounded, color: _green, size: 38),
+                            ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 2),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    profile.name.isEmpty ? 'دوکان' : profile.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(color: Colors.white, fontSize: 23, fontWeight: FontWeight.w900),
+                                  ),
+                                ),
+                                if (verified) ...[
+                                  const SizedBox(width: 7),
+                                  const Icon(Icons.verified_rounded, color: Color(0xFF34D399), size: 21),
+                                ],
+                              ],
+                            ),
+                            const SizedBox(height: 5),
+                            Text(
+                              '${profile.businessTypeIcon} ${profile.businessTypeName}',
+                              style: const TextStyle(color: Color(0xFFE6FFFA), fontWeight: FontWeight.w800, fontSize: 11.5),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 7),
-                Text(
-                  '${profile.businessTypeIcon} ${profile.businessTypeName}',
-                  style: const TextStyle(
-                    color: Color(0xFFE6FFFA),
-                    fontWeight: FontWeight.w800,
-                    fontSize: 12,
-                  ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 7,
+                  runSpacing: 7,
+                  children: [
+                    if (profile.isPinned)
+                      const _HeroBadge(icon: Icons.push_pin_rounded, label: 'پێشکەوتوو'),
+                    if (verified)
+                      const _HeroBadge(icon: Icons.verified_rounded, label: 'پشتڕاستکراوە'),
+                    if (opening != null)
+                      _HeroBadge(
+                        icon: opening.isOpen ? Icons.schedule_rounded : Icons.lock_clock_rounded,
+                        label: opening.isOpen ? 'ئێستا کراوەیە' : 'ئێستا داخراوە',
+                      ),
+                  ],
                 ),
-                if (profile
-                    .locationText.isNotEmpty) ...[
-                  const SizedBox(height: 7),
+                if (profile.locationText.isNotEmpty) ...[
+                  const SizedBox(height: 10),
                   Row(
                     children: [
-                      const Icon(
-                        Icons
-                            .location_on_outlined,
-                        color: Colors.white70,
-                        size: 16,
-                      ),
+                      const Icon(Icons.location_on_outlined, color: Colors.white70, size: 16),
                       const SizedBox(width: 5),
                       Expanded(
                         child: Text(
                           profile.locationText,
                           maxLines: 1,
-                          overflow:
-                              TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color:
-                                Colors.white70,
-                            fontSize: 11,
-                          ),
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: Colors.white70, fontSize: 11),
                         ),
                       ),
                     ],
@@ -944,14 +928,42 @@ class _ProfileHero extends StatelessWidget {
   }
 }
 
+class _HeroBadge extends StatelessWidget {
+  const _HeroBadge({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: .30),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.white24),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: Colors.white, size: 14),
+            const SizedBox(width: 5),
+            Text(label, style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w800)),
+          ],
+        ),
+      );
+}
+
 class _QuickActions extends StatelessWidget {
+  final String phone;
   final bool hasMap;
+  final VoidCallback? onCall;
   final VoidCallback? onMap;
   final VoidCallback onShare;
   final VoidCallback? onContact;
 
   const _QuickActions({
+    required this.phone,
     required this.hasMap,
+    required this.onCall,
     required this.onMap,
     required this.onShare,
     required this.onContact,
@@ -960,45 +972,39 @@ class _QuickActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final actions = <Widget>[
-      if (hasMap)
-        _ActionCard(
-          icon: Icons.location_on_rounded,
-          label: 'شوێنی دوکان',
-          value: 'ڕێگا بۆ دوکان',
-          onTap: onMap,
-        ),
+      _ActionCard(
+        icon: Icons.call_rounded,
+        label: 'پەیوەندی',
+        value: phone.trim().isEmpty ? 'ژمارە نییە' : 'پەیوەندی بکە',
+        onTap: onCall,
+      ),
+      _ActionCard(
+        icon: Icons.directions_rounded,
+        label: 'ڕێنمایی',
+        value: hasMap ? 'بڕۆ بۆ دوکان' : 'شوێن نییە',
+        onTap: onMap,
+      ),
       _ActionCard(
         icon: Icons.ios_share_rounded,
-        label: 'پڕۆفایل',
-        value: 'هاوبەشکردن',
+        label: 'هاوبەش',
+        value: 'لینکی دوکان',
         onTap: onShare,
       ),
-      if (onContact != null)
-        _ActionCard(
-          icon: Icons.chat_bubble_rounded,
-          label: 'پەیوەندی',
-          value: 'پەیوەندی بکە',
-          onTap: onContact,
-        ),
+      _ActionCard(
+        icon: Icons.chat_bubble_rounded,
+        label: 'سۆشیال',
+        value: onContact == null ? 'لینک نییە' : 'پەیوەندی زیاتر',
+        onTap: onContact,
+      ),
     ];
 
-    return SizedBox(
-      height: 110,
-      child: Row(
-        crossAxisAlignment:
-            CrossAxisAlignment.stretch,
-        children: [
-          for (int i = 0;
-              i < actions.length;
-              i++) ...[
-            Expanded(
-              child: actions[i],
-            ),
-            if (i != actions.length - 1)
-              const SizedBox(width: 8),
-          ],
-        ],
-      ),
+    return GridView.count(
+      crossAxisCount: 4,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisSpacing: 8,
+      childAspectRatio: .88,
+      children: actions,
     );
   }
 }
@@ -1018,8 +1024,9 @@ class _ActionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Material(
-      color: Colors.white,
+      color: theme.colorScheme.surface,
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
         onTap: onTap,
@@ -1030,7 +1037,7 @@ class _ActionCard extends StatelessWidget {
             borderRadius:
                 BorderRadius.circular(18),
             border: Border.all(
-              color: _line,
+              color: theme.colorScheme.outlineVariant,
             ),
           ),
           child: Column(
@@ -1041,7 +1048,7 @@ class _ActionCard extends StatelessWidget {
                 width: 34,
                 height: 34,
                 decoration: BoxDecoration(
-                  color: _softGreen,
+                  color: theme.colorScheme.primaryContainer,
                   borderRadius:
                       BorderRadius.circular(11),
                 ),
@@ -1055,9 +1062,10 @@ class _ActionCard extends StatelessWidget {
               Text(
                 label,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: _muted,
-                  fontSize: 8,
+                style: TextStyle(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
               const SizedBox(height: 3),
@@ -1067,8 +1075,8 @@ class _ActionCard extends StatelessWidget {
                 overflow:
                     TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: _ink,
+                style: TextStyle(
+                  color: theme.colorScheme.onSurface,
                   fontSize: 9,
                   fontWeight: FontWeight.w900,
                 ),
@@ -1090,21 +1098,22 @@ class _BioSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(17),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
-          color: _line,
+          color: theme.colorScheme.outlineVariant,
         ),
       ),
       child: Column(
         crossAxisAlignment:
             CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
               Icon(
                 Icons.auto_awesome_rounded,
@@ -1115,7 +1124,7 @@ class _BioSection extends StatelessWidget {
               Text(
                 'دەربارەی دوکان',
                 style: TextStyle(
-                  color: _ink,
+                  color: theme.colorScheme.onSurface,
                   fontSize: 13,
                   fontWeight: FontWeight.w900,
                 ),
@@ -1125,8 +1134,8 @@ class _BioSection extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             bio,
-            style: const TextStyle(
-              color: _muted,
+            style: TextStyle(
+              color: theme.colorScheme.onSurfaceVariant,
               fontSize: 11,
               height: 1.9,
             ),
@@ -1151,14 +1160,15 @@ class _GallerySection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Column(
       crossAxisAlignment:
           CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'وێنەکان',
           style: TextStyle(
-            color: _ink,
+            color: theme.colorScheme.onSurface,
             fontSize: 14,
             fontWeight: FontWeight.w900,
           ),
@@ -1180,11 +1190,11 @@ class _GallerySection extends StatelessWidget {
                   width: 112,
                   clipBehavior: Clip.antiAlias,
                   decoration: BoxDecoration(
-                    color: _softGreen,
+                    color: theme.colorScheme.primaryContainer,
                     borderRadius:
                         BorderRadius.circular(18),
                     border: Border.all(
-                      color: _line,
+                      color: theme.colorScheme.outlineVariant,
                     ),
                   ),
                   child: Image.network(
@@ -1192,9 +1202,9 @@ class _GallerySection extends StatelessWidget {
                     fit: BoxFit.cover,
                     errorBuilder:
                         (_, __, ___) {
-                      return const Icon(
+                      return Icon(
                         Icons.image_not_supported,
-                        color: _muted,
+                        color: theme.colorScheme.onSurfaceVariant,
                       );
                     },
                   ),
@@ -1219,10 +1229,11 @@ class _ProfileTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.all(5),
       decoration: BoxDecoration(
-        color: const Color(0xFFEFF3F4),
+        color: theme.colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
@@ -1261,9 +1272,9 @@ class _TabButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Material(
-      color:
-          active ? Colors.white : Colors.transparent,
+      color: active ? theme.colorScheme.surface : Colors.transparent,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
@@ -1276,7 +1287,7 @@ class _TabButton extends StatelessWidget {
             text,
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: active ? _green : _muted,
+              color: active ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
               fontSize: 10,
               fontWeight: FontWeight.w900,
             ),
@@ -1298,16 +1309,17 @@ class _MenuItemCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final image =
         normalizeNizikUrl(item.imageUrl);
 
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: _line,
+          color: theme.colorScheme.outlineVariant,
         ),
       ),
       child: Row(
@@ -1322,7 +1334,7 @@ class _MenuItemCard extends StatelessWidget {
                 height: 72,
                 clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
-                  color: _softGreen,
+                  color: theme.colorScheme.primaryContainer,
                   borderRadius:
                       BorderRadius.circular(16),
                 ),
@@ -1349,8 +1361,8 @@ class _MenuItemCard extends StatelessWidget {
               children: [
                 Text(
                   item.title,
-                  style: const TextStyle(
-                    color: _ink,
+                  style: TextStyle(
+                    color: theme.colorScheme.onSurface,
                     fontSize: 12,
                     fontWeight:
                         FontWeight.w900,
@@ -1364,8 +1376,8 @@ class _MenuItemCard extends StatelessWidget {
                     maxLines: 2,
                     overflow:
                         TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: _muted,
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurfaceVariant,
                       fontSize: 9,
                       height: 1.6,
                     ),
@@ -1383,14 +1395,14 @@ class _MenuItemCard extends StatelessWidget {
                 vertical: 7,
               ),
               decoration: BoxDecoration(
-                color: _softGreen,
+                color: theme.colorScheme.primaryContainer,
                 borderRadius:
                     BorderRadius.circular(999),
               ),
               child: Text(
                 item.price,
-                style: const TextStyle(
-                  color: _darkGreen,
+                style: TextStyle(
+                  color: theme.colorScheme.primary,
                   fontWeight: FontWeight.w900,
                   fontSize: 10,
                 ),
@@ -1454,6 +1466,7 @@ class _ContactSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     if (links.isEmpty) {
       return const _EmptySection(
         icon: Icons.link_off_rounded,
@@ -1469,7 +1482,7 @@ class _ContactSection extends StatelessWidget {
             padding:
                 const EdgeInsets.only(bottom: 9),
             child: Material(
-              color: Colors.white,
+              color: theme.colorScheme.surface,
               borderRadius:
                   BorderRadius.circular(18),
               child: InkWell(
@@ -1485,7 +1498,7 @@ class _ContactSection extends StatelessWidget {
                     borderRadius:
                         BorderRadius.circular(18),
                     border:
-                        Border.all(color: _line),
+                        Border.all(color: theme.colorScheme.outlineVariant),
                   ),
                   child: Row(
                     children: [
@@ -1494,7 +1507,7 @@ class _ContactSection extends StatelessWidget {
                         height: 42,
                         decoration:
                             BoxDecoration(
-                          color: _softGreen,
+                          color: theme.colorScheme.primaryContainer,
                           borderRadius:
                               BorderRadius
                                   .circular(13),
@@ -1514,10 +1527,10 @@ class _ContactSection extends StatelessWidget {
                               CrossAxisAlignment
                                   .start,
                           children: [
-                            const Text(
+                            Text(
                               'پەیوەندی',
                               style: TextStyle(
-                                color: _muted,
+                                color: theme.colorScheme.onSurfaceVariant,
                                 fontSize: 8,
                               ),
                             ),
@@ -1531,8 +1544,8 @@ class _ContactSection extends StatelessWidget {
                                   : social
                                       .platform,
                               style:
-                                  const TextStyle(
-                                color: _ink,
+                                  TextStyle(
+                                color: theme.colorScheme.onSurface,
                                 fontSize: 11,
                                 fontWeight:
                                     FontWeight
@@ -1542,11 +1555,9 @@ class _ContactSection extends StatelessWidget {
                           ],
                         ),
                       ),
-                      const Icon(
+                      Icon(
                         Icons.open_in_new_rounded,
-                        color: Color(
-                          0xFF94A3B8,
-                        ),
+                        color: theme.colorScheme.onSurfaceVariant,
                         size: 18,
                       ),
                     ],
@@ -1571,6 +1582,7 @@ class _EmptySection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(
@@ -1578,10 +1590,10 @@ class _EmptySection extends StatelessWidget {
         vertical: 32,
       ),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: _line,
+          color: theme.colorScheme.outlineVariant,
         ),
       ),
       child: Column(
@@ -1589,14 +1601,14 @@ class _EmptySection extends StatelessWidget {
           Icon(
             icon,
             size: 34,
-            color: const Color(0xFF94A3B8),
+            color: theme.colorScheme.onSurfaceVariant,
           ),
           const SizedBox(height: 10),
           Text(
             text,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: _muted,
+            style: TextStyle(
+              color: theme.colorScheme.onSurfaceVariant,
               fontSize: 11,
             ),
           ),

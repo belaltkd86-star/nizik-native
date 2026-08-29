@@ -1,31 +1,24 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:dio_cache_interceptor/dio_cache_interceptor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:flutter_map_cache/flutter_map_cache.dart';
 import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:http_cache_file_store/http_cache_file_store.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/shop.dart';
-import '../services/global_search_service.dart';
 import '../services/location_preference_service.dart';
 import '../services/location_service.dart';
 import '../services/route_service.dart';
 import '../services/shop_service.dart';
 import '../widgets/report_sheet.dart';
 import '../widgets/voice_search_sheet.dart';
-import 'global_search_screen.dart';
 import 'settings_screen.dart';
 import 'shop_detail_screen.dart';
 
@@ -58,6 +51,7 @@ class _ShopMapScreenState extends State<ShopMapScreen>
   static const _coordCacheKey = 'nizik_map_coords_v10';
   static const _privacyKey = 'nizik_map_privacy_v10';
   static const _approxKey = 'nizik_map_approx_v10';
+  static const _shopsCacheKey = 'nizik_map_shops_cache_v10';
   static const _trafficTemplate = String.fromEnvironment(
     'NIZIK_TRAFFIC_TILE_URL',
     defaultValue: '',
@@ -68,8 +62,6 @@ class _ShopMapScreenState extends State<ShopMapScreen>
   final LocationPreferenceService _locationPrefs = LocationPreferenceService.instance;
   final RouteService _routeService = RouteService();
   final Distance _distance = const Distance();
-
-  late final Future<CacheStore> _cacheStoreFuture = _createCacheStore();
 
   StreamSubscription<Position>? _locationSub;
   StreamSubscription<CompassEvent>? _compassSub;
@@ -90,7 +82,6 @@ class _ShopMapScreenState extends State<ShopMapScreen>
   bool _loading = true;
   bool _gettingLocation = false;
   bool _mapReady = false;
-  bool _darkMap = false;
   bool _traffic = false;
   bool _privacyMode = false;
   bool _approximateLocation = false;
@@ -145,7 +136,6 @@ class _ShopMapScreenState extends State<ShopMapScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _darkMap = Theme.of(context).brightness == Brightness.dark && _baseLayer == _MapBaseLayer.street;
   }
 
   @override
@@ -177,11 +167,6 @@ class _ShopMapScreenState extends State<ShopMapScreen>
     _search.dispose();
     _mapController.dispose();
     super.dispose();
-  }
-
-  static Future<CacheStore> _createCacheStore() async {
-    final dir = await getTemporaryDirectory();
-    return FileCacheStore('${dir.path}${Platform.pathSeparator}NizikMapTilesV10');
   }
 
   Future<void> _loadPrefs() async {
@@ -264,6 +249,69 @@ class _ShopMapScreenState extends State<ShopMapScreen>
     });
   }
 
+  Future<void> _saveShopCache(List<Shop> shops) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final payload = jsonEncode(<String, dynamic>{
+        'saved_at': DateTime.now().toIso8601String(),
+        'shops': shops.map((shop) => shop.toJson()).toList(),
+      });
+      await prefs.setString(_shopsCacheKey, payload);
+    } catch (_) {}
+  }
+
+  Future<List<Shop>> _loadShopCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_shopsCacheKey);
+      if (raw == null || raw.isEmpty) return const <Shop>[];
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return const <Shop>[];
+      final items = decoded['shops'];
+      if (items is! List) return const <Shop>[];
+      return items
+          .whereType<Map>()
+          .map((item) => Shop.fromJson(Map<String, dynamic>.from(item)))
+          .where((shop) => shop.slug.trim().isNotEmpty)
+          .toList();
+    } catch (_) {
+      return const <Shop>[];
+    }
+  }
+
+  List<ShopBusinessType> _deriveBusinessTypes(List<Shop> shops) {
+    final counts = <String, int>{};
+    final labels = <String, String>{};
+    final icons = <String, String>{};
+    for (final shop in shops) {
+      final key = (shop.businessType ?? '').trim();
+      if (key.isEmpty) continue;
+      counts[key] = (counts[key] ?? 0) + 1;
+      labels[key] = shop.typeLabel;
+      icons[key] = shop.typeIcon;
+    }
+    return counts.entries
+        .map((entry) => ShopBusinessType(
+              key: entry.key,
+              name: labels[entry.key] ?? entry.key,
+              icon: icons[entry.key] ?? '🏪',
+              shopCount: entry.value,
+            ))
+        .toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+  }
+
+  List<_MappedShop> _mapCachedShops(List<Shop> shops) {
+    final mapped = <_MappedShop>[];
+    for (final shop in shops) {
+      final point = _extractLatLng(shop.googleMapsUrl) ?? _coordinateCache[shop.slug];
+      if (point != null && !mapped.any((item) => item.shop.slug == shop.slug)) {
+        mapped.add(_MappedShop(shop: shop, point: point));
+      }
+    }
+    return mapped;
+  }
+
   Future<void> _loadMapData() async {
     if (!mounted) return;
     setState(() {
@@ -288,6 +336,7 @@ class _ShopMapScreenState extends State<ShopMapScreen>
       ]);
       final shops = results[0] as List<Shop>;
       final metadata = results[1] as ShopMetadata;
+      unawaited(_saveShopCache(shops));
       _shopCount = shops.length;
       _businessTypes = metadata.businessTypes;
 
@@ -345,10 +394,27 @@ class _ShopMapScreenState extends State<ShopMapScreen>
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = e.toString().replaceFirst('Exception: ', '');
-      });
+      final cachedShops = await _loadShopCache();
+      if (!mounted) return;
+      if (cachedShops.isNotEmpty) {
+        final cachedMapped = _mapCachedShops(cachedShops);
+        setState(() {
+          _mapped = cachedMapped;
+          _shopCount = cachedShops.length;
+          _resolvedCount = cachedMapped.length;
+          _businessTypes = _deriveBusinessTypes(cachedShops);
+          _loading = false;
+          _error = 'ئینتەرنێت یان سێرڤەر بەردەست نییە • داتای دوا جار نیشان دەدرێت';
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _mapReady) _refreshLazyBounds();
+        });
+      } else {
+        setState(() {
+          _loading = false;
+          _error = e.toString().replaceFirst('Exception: ', '');
+        });
+      }
     }
   }
 
@@ -795,32 +861,40 @@ class _ShopMapScreenState extends State<ShopMapScreen>
       return;
     }
 
+    // Do not depend on the newer global_search endpoint for map search.
+    // The existing shops_public endpoint is already used by the app and can
+    // search name, city, region, address, business type, phone and description.
     try {
-      final location = _locationPrefs.preference.value;
-      final remote = await GlobalSearchService.search(
-        query: query,
-        cityId: location.cityId,
-        regionId: location.regionId,
-      );
-      final slugs = remote
-          .where((item) => item.kind == 'shop' && item.slug.isNotEmpty)
-          .map((item) => item.slug)
-          .toSet();
+      final remoteShops = await ShopService.fetchShops(query: query);
+      final added = <_MappedShop>[];
+      for (final shop in remoteShops.take(60)) {
+        var point = _extractLatLng(shop.googleMapsUrl) ?? _coordinateCache[shop.slug];
+        if (point == null && (shop.googleMapsUrl ?? '').trim().isNotEmpty) {
+          final resolved = await _resolveShopPoint(shop);
+          point = resolved?.point;
+        }
+        if (point != null) added.add(_MappedShop(shop: shop, point: point));
+      }
       if (!mounted) return;
-      setState(() => _remoteShopSlugs = slugs);
+      final merged = <String, _MappedShop>{for (final item in _mapped) item.shop.slug: item};
+      for (final item in added) merged[item.shop.slug] = item;
+      setState(() {
+        _mapped = merged.values.toList(growable: false);
+        _remoteShopSlugs = remoteShops.map((shop) => shop.slug).toSet();
+        _showAutocomplete = false;
+      });
       matches = _filteredMapped;
       if (matches.isNotEmpty) {
         _showMapMatches(matches);
         return;
       }
     } catch (_) {
-      // Fall back to the complete search screen.
+      // Local/cached map search is still available even if the server is offline.
     }
 
     if (!mounted) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => GlobalSearchScreen(initialQuery: query)),
-    );
+    setState(() => _showAutocomplete = false);
+    _message('هیچ شوێنێک بۆ «$query» لە نەخشەدا نەدۆزرایەوە.');
   }
 
   void _showMapMatches(List<_MappedShop> matches) {
@@ -894,15 +968,11 @@ class _ShopMapScreenState extends State<ShopMapScreen>
                   SwitchListTile.adaptive(
                     contentPadding: EdgeInsets.zero,
                     title: const Text('Traffic layer', style: TextStyle(fontWeight: FontWeight.w800)),
-                    subtitle: Text(_trafficTemplate.isEmpty ? 'پێویستی بە Traffic tile provider هەیە؛ API key لە کۆددا هاردکۆد نەکراوە.' : 'Traffic provider ئامادەیە.'),
-                    value: _traffic,
-                    onChanged: (v) {
-                      if (v && _trafficTemplate.isEmpty) {
-                        _message('NIZIK_TRAFFIC_TILE_URL لە build config دابنێ بۆ Traffic layer.');
-                        return;
-                      }
-                      update(() => _traffic = v);
-                    },
+                    subtitle: Text(_trafficTemplate.isEmpty
+                        ? 'لە ئێستادا ناچالاکە؛ نەخشەی سەرەکی هیچ API key ـێک ناوێت.'
+                        : 'Traffic provider ئامادەیە.'),
+                    value: _trafficTemplate.isEmpty ? false : _traffic,
+                    onChanged: _trafficTemplate.isEmpty ? null : (v) => update(() => _traffic = v),
                   ),
                   SwitchListTile.adaptive(
                     contentPadding: EdgeInsets.zero,
@@ -1018,16 +1088,26 @@ class _ShopMapScreenState extends State<ShopMapScreen>
       child: Scaffold(
         backgroundColor: theme.scaffoldBackgroundColor,
         body: Stack(
+          fit: StackFit.expand,
           children: [
             Positioned.fill(child: _buildMap()),
-            SafeArea(child: _buildTopSearch()),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                bottom: false,
+                child: _buildTopSearch(),
+              ),
+            ),
             _buildFloatingControls(),
             if (_showAutocomplete && _query.trim().length >= 2) _buildAutocomplete(),
             if (_loading) _buildLoadingPill(),
             if (_locationError != null) _buildLocationProblem(),
-            if (_error != null) Positioned.fill(child: _MapError(message: _error!, onRetry: _loadMapData)),
+            if (_error != null) _buildDataProblem(),
             if (_aroundPin != null) _buildAroundPill(),
-            if (_selectedShop != null && _selectedPoint != null && _error == null) _buildSelectedCard(),
+            if (_selectedShop == null && _routeAlternatives.isEmpty) _buildMapDock(),
+            if (_selectedShop != null && _selectedPoint != null) _buildSelectedCard(),
           ],
         ),
       ),
@@ -1035,140 +1115,165 @@ class _ShopMapScreenState extends State<ShopMapScreen>
   }
 
   Widget _buildMap() {
-    return FutureBuilder<CacheStore>(
-      future: _cacheStoreFuture,
-      builder: (context, snapshot) {
-        final provider = snapshot.hasData
-            ? CachedTileProvider(maxStale: const Duration(days: 45), store: snapshot.data!)
-            : NetworkTileProvider();
-        return FlutterMap(
-          mapController: _mapController,
-          options: MapOptions(
-            initialCenter: _defaultCenter,
-            initialZoom: 12,
-            minZoom: 3,
-            maxZoom: 19,
-            keepAlive: true,
-            interactionOptions: const InteractionOptions(flags: InteractiveFlag.all),
-            onMapReady: () {
-              _mapReady = true;
-              _refreshLazyBounds();
-            },
-            onPositionChanged: _onMapMoved,
-            onLongPress: (_, point) => _setAroundPin(point),
-            onTap: (_, __) {
-              if (_showAutocomplete) setState(() => _showAutocomplete = false);
-            },
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    // Nizik map intentionally uses public raster basemaps that do not require
+    // an API key. Esri's tile endpoints are used for a more reliable full-screen
+    // map than the previous CARTO setup, which could leave large blank areas on
+    // some Android emulators/devices.
+    final streetTemplate = isDark
+        ? 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}'
+        : 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}';
+    const darkReferenceTemplate =
+        'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}';
+
+    final baseTemplate = _baseLayer == _MapBaseLayer.satellite
+        ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+        : streetTemplate;
+
+    return ColoredBox(
+      color: isDark ? const Color(0xFF07110E) : const Color(0xFFEAF1ED),
+      child: FlutterMap(
+        mapController: _mapController,
+        options: MapOptions(
+          initialCenter: _defaultCenter,
+          initialZoom: 12,
+          minZoom: 3,
+          maxZoom: 19,
+          keepAlive: true,
+          interactionOptions: const InteractionOptions(flags: InteractiveFlag.all),
+          onMapReady: () {
+            _mapReady = true;
+            _refreshLazyBounds();
+          },
+          onPositionChanged: _onMapMoved,
+          onLongPress: (_, point) => _setAroundPin(point),
+          onTap: (_, __) {
+            if (_showAutocomplete) setState(() => _showAutocomplete = false);
+          },
+        ),
+        children: [
+          TileLayer(
+            urlTemplate: baseTemplate,
+            userAgentPackageName: 'com.nizik.nizikNative',
+            maxNativeZoom: 19,
+            tileProvider: NetworkTileProvider(),
           ),
-          children: [
+          if (isDark && _baseLayer == _MapBaseLayer.street)
             TileLayer(
-              urlTemplate: _baseLayer == _MapBaseLayer.satellite
-                  ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-                  : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              urlTemplate: darkReferenceTemplate,
               userAgentPackageName: 'com.nizik.nizikNative',
-              maxNativeZoom: _baseLayer == _MapBaseLayer.satellite ? 18 : 19,
-              tileProvider: provider,
-              tileBuilder: _darkMap && _baseLayer == _MapBaseLayer.street
-                  ? (context, tileWidget, tile) => ColorFiltered(
-                      colorFilter: const ColorFilter.matrix(<double>[
-                        -0.78, 0, 0, 0, 238,
-                        0, -0.78, 0, 0, 238,
-                        0, 0, -0.78, 0, 238,
-                        0, 0, 0, 1, 0,
-                      ]),
-                      child: tileWidget,
-                    )
-                  : null,
+              maxNativeZoom: 19,
+              tileProvider: NetworkTileProvider(),
             ),
-            if (_traffic && _trafficTemplate.isNotEmpty)
-              TileLayer(
-                urlTemplate: _trafficTemplate,
-                userAgentPackageName: 'com.nizik.nizikNative',
-                maxNativeZoom: 19,
-                tileProvider: provider,
-              ),
-            if (_myLocation != null && _gpsAccuracy > 0)
-              CircleLayer(circles: [
-                CircleMarker(
-                  point: _myLocation!,
-                  radius: _gpsAccuracy,
-                  useRadiusInMeter: true,
-                  color: _mapGreen.withValues(alpha: .10),
-                  borderColor: _mapGreen.withValues(alpha: .32),
-                  borderStrokeWidth: 1.5,
-                ),
-              ]),
-            if (_aroundPin != null)
-              CircleLayer(circles: [
-                CircleMarker(
-                  point: _aroundPin!,
-                  radius: _aroundRadiusMeters,
-                  useRadiusInMeter: true,
-                  color: const Color(0xFF2563EB).withValues(alpha: .07),
-                  borderColor: const Color(0xFF2563EB).withValues(alpha: .45),
-                  borderStrokeWidth: 2,
-                ),
-              ]),
-            if (_routeAlternatives.isNotEmpty)
-              PolylineLayer(
-                polylines: [
-                  for (var i = 0; i < _routeAlternatives.length; i++)
-                    Polyline(
-                      points: _routeAlternatives[i].points,
-                      strokeWidth: i == _routeIndex ? 6 : 3,
-                      color: i == _routeIndex ? _mapGreen : const Color(0xFF64748B).withValues(alpha: .45),
-                      borderStrokeWidth: i == _routeIndex ? 2.5 : 0,
-                      borderColor: Colors.white,
-                    ),
-                ],
-              ),
-            MarkerClusterLayerWidget(
-              options: MarkerClusterLayerOptions(
-                maxClusterRadius: 48,
-                maxZoom: 15,
-                size: const Size(48, 48),
-                padding: const EdgeInsets.all(40),
-                markers: _filteredMapped.map((mapped) {
-                  final selected = _selectedShop?.slug == mapped.shop.slug;
-                  return Marker(
-                    point: mapped.point,
-                    width: selected ? 68 : 58,
-                    height: selected ? 74 : 64,
-                    child: GestureDetector(
-                      onTap: () => _selectShop(mapped),
-                      child: _BusinessTypePin(
-                        shop: mapped.shop,
-                        selected: selected,
-                        color: _businessColor(mapped.shop),
-                      ),
-                    ),
-                  );
-                }).toList(),
-                builder: (context, cluster) => Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const LinearGradient(colors: [_mapGreen, _mapDarkGreen]),
-                    border: Border.all(color: Colors.white, width: 3),
-                    boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 14, offset: Offset(0, 5))],
-                  ),
-                  alignment: Alignment.center,
-                  child: Text('${cluster.length}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
-                ),
-              ),
+          if (_traffic && _trafficTemplate.isNotEmpty)
+            TileLayer(
+              urlTemplate: _trafficTemplate,
+              userAgentPackageName: 'com.nizik.nizikNative',
+              maxNativeZoom: 19,
+              tileProvider: NetworkTileProvider(),
             ),
-            MarkerLayer(markers: [
-              if (_aroundPin != null)
-                Marker(point: _aroundPin!, width: 34, height: 42, child: const Icon(Icons.location_pin, color: Color(0xFF2563EB), size: 38)),
-              if (_myLocation != null)
-                Marker(point: _myLocation!, width: 62, height: 62, child: _UserLocationPin(heading: _heading)),
+          if (_myLocation != null && _gpsAccuracy > 0)
+            CircleLayer(circles: [
+              CircleMarker(
+                point: _myLocation!,
+                radius: _gpsAccuracy,
+                useRadiusInMeter: true,
+                color: _mapGreen.withValues(alpha: .10),
+                borderColor: _mapGreen.withValues(alpha: .32),
+                borderStrokeWidth: 1.5,
+              ),
             ]),
-            SimpleAttributionWidget(
-              source: Text(_baseLayer == _MapBaseLayer.satellite ? 'Esri World Imagery' : '© OpenStreetMap contributors'),
-              alignment: Alignment.bottomLeft,
+          if (_aroundPin != null)
+            CircleLayer(circles: [
+              CircleMarker(
+                point: _aroundPin!,
+                radius: _aroundRadiusMeters,
+                useRadiusInMeter: true,
+                color: const Color(0xFF2563EB).withValues(alpha: .07),
+                borderColor: const Color(0xFF2563EB).withValues(alpha: .45),
+                borderStrokeWidth: 2,
+              ),
+            ]),
+          if (_routeAlternatives.isNotEmpty)
+            PolylineLayer(
+              polylines: [
+                for (var i = 0; i < _routeAlternatives.length; i++)
+                  Polyline(
+                    points: _routeAlternatives[i].points,
+                    strokeWidth: i == _routeIndex ? 6 : 3,
+                    color: i == _routeIndex
+                        ? _mapGreen
+                        : theme.colorScheme.onSurfaceVariant.withValues(alpha: .45),
+                    borderStrokeWidth: i == _routeIndex ? 2.5 : 0,
+                    borderColor: isDark ? const Color(0xFF0D1713) : Colors.white,
+                  ),
+              ],
             ),
-          ],
-        );
-      },
+          MarkerClusterLayerWidget(
+            options: MarkerClusterLayerOptions(
+              maxClusterRadius: 48,
+              maxZoom: 15,
+              size: const Size(48, 48),
+              padding: const EdgeInsets.all(40),
+              markers: _filteredMapped.map((mapped) {
+                final selected = _selectedShop?.slug == mapped.shop.slug;
+                return Marker(
+                  point: mapped.point,
+                  width: selected ? 68 : 58,
+                  height: selected ? 74 : 64,
+                  child: GestureDetector(
+                    onTap: () => _selectShop(mapped),
+                    child: _BusinessTypePin(
+                      shop: mapped.shop,
+                      selected: selected,
+                      color: _businessColor(mapped.shop),
+                    ),
+                  ),
+                );
+              }).toList(),
+              builder: (context, cluster) => Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const LinearGradient(colors: [_mapGreen, _mapDarkGreen]),
+                  border: Border.all(color: isDark ? const Color(0xFF101B17) : Colors.white, width: 3),
+                  boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 14, offset: Offset(0, 5))],
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  '${cluster.length}',
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
+                ),
+              ),
+            ),
+          ),
+          MarkerLayer(markers: [
+            if (_aroundPin != null)
+              Marker(
+                point: _aroundPin!,
+                width: 34,
+                height: 42,
+                child: const Icon(Icons.location_pin, color: Color(0xFF2563EB), size: 38),
+              ),
+            if (_myLocation != null)
+              Marker(point: _myLocation!, width: 62, height: 62, child: _UserLocationPin(heading: _heading)),
+          ]),
+          SimpleAttributionWidget(
+            source: Text(
+              _baseLayer == _MapBaseLayer.satellite
+                  ? 'Esri World Imagery'
+                  : 'Esri basemap',
+              style: TextStyle(
+                color: isDark ? Colors.white70 : const Color(0xFF334155),
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            alignment: Alignment.bottomLeft,
+          ),
+        ],
+      ),
     );
   }
 
@@ -1192,7 +1297,7 @@ class _ShopMapScreenState extends State<ShopMapScreen>
             Expanded(
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 220),
-                height: 54,
+                height: 58,
                 decoration: BoxDecoration(
                   color: theme.colorScheme.surface.withValues(alpha: .96),
                   borderRadius: BorderRadius.circular(19),
@@ -1205,9 +1310,11 @@ class _ShopMapScreenState extends State<ShopMapScreen>
                   onChanged: _onSearchChanged,
                   onSubmitted: _submitSearch,
                   textInputAction: TextInputAction.search,
+                  style: TextStyle(color: theme.colorScheme.onSurface, fontWeight: FontWeight.w700),
+                  cursorColor: theme.colorScheme.primary,
                   decoration: InputDecoration(
                     hintText: 'دووکان، شار، ناوچە، ناونیشان، ژمارە…',
-                    hintStyle: const TextStyle(fontSize: 11),
+                    hintStyle: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12.5, fontWeight: FontWeight.w600),
                     prefixIcon: IconButton(onPressed: () => _submitSearch(), icon: const Icon(Icons.search_rounded, color: _mapGreen)),
                     suffixIconConstraints: const BoxConstraints(minWidth: 86, maxWidth: 98),
                     suffixIcon: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -1282,9 +1389,9 @@ class _ShopMapScreenState extends State<ShopMapScreen>
           ListTile(
             dense: true,
             leading: const Icon(Icons.travel_explore_rounded, color: Color(0xFF2563EB)),
-            title: Text('گەڕانی فراوان بۆ «$_query»', style: const TextStyle(fontWeight: FontWeight.w900)),
-            subtitle: const Text('دووکان + خزمەتگوزاری + menu/catalog', style: TextStyle(fontSize: 10)),
-            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => GlobalSearchScreen(initialQuery: _query))),
+            title: Text('گەڕان لە هەموو دووکانەکان بۆ «$_query»', style: const TextStyle(fontWeight: FontWeight.w900)),
+            subtitle: const Text('ناو، شار، ناوچە، ناونیشان، ژمارە و جۆری دووکان', style: TextStyle(fontSize: 10)),
+            onTap: () => _submitSearch(_query),
           ),
         ]),
       ),
@@ -1327,6 +1434,82 @@ class _ShopMapScreenState extends State<ShopMapScreen>
     ),
   );
 
+  Widget _buildDataProblem() {
+    final theme = Theme.of(context);
+    return Positioned(
+      top: MediaQuery.paddingOf(context).top + 76,
+      right: 12,
+      left: 68,
+      child: Material(
+        color: theme.colorScheme.surface.withValues(alpha: .97),
+        borderRadius: BorderRadius.circular(18),
+        elevation: 10,
+        shadowColor: Colors.black26,
+        child: Padding(
+          padding: const EdgeInsetsDirectional.fromSTEB(11, 8, 6, 8),
+          child: Row(children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(color: theme.colorScheme.errorContainer, borderRadius: BorderRadius.circular(11)),
+              child: Icon(Icons.cloud_off_rounded, color: theme.colorScheme.error, size: 18),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(_mapped.isEmpty ? 'داتای دووکان لۆد نەکرا' : 'داتای ئۆفلاینی دوا جار', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900)),
+                Text(_mapped.isEmpty ? 'نەخشە هەر بەردەوامە؛ GPS و جوڵان بەکاربهێنە.' : 'دووکانە هەڵگیراوەکان نیشان دەدرێن تا پەیوەندی بگەڕێتەوە.', maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 9.5)),
+              ]),
+            ),
+            IconButton(onPressed: _loadMapData, tooltip: 'دووبارە', icon: const Icon(Icons.refresh_rounded, size: 19)),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMapDock() {
+    final theme = Theme.of(context);
+    final count = _filteredMapped.length;
+    return Positioned(
+      right: 12,
+      left: 12,
+      bottom: MediaQuery.paddingOf(context).bottom + 10,
+      child: Material(
+        color: theme.colorScheme.surface.withValues(alpha: .97),
+        elevation: 12,
+        shadowColor: Colors.black26,
+        borderRadius: BorderRadius.circular(22),
+        child: Container(
+          height: 58,
+          padding: const EdgeInsets.symmetric(horizontal: 9),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: theme.colorScheme.outlineVariant),
+          ),
+          child: Row(children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(color: theme.colorScheme.primaryContainer, borderRadius: BorderRadius.circular(14)),
+              child: Icon(Icons.storefront_rounded, color: theme.colorScheme.primary, size: 20),
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('$count شوێن لەم ناوچەیەدا', style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 11.5, fontWeight: FontWeight.w900)),
+                Text(_selectedType.isEmpty ? 'هەموو جۆرەکان' : 'فلتەرکراو', style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 9.5)),
+              ]),
+            ),
+            IconButton.filledTonal(onPressed: _showCategorySheet, tooltip: 'جۆرەکان', icon: const Icon(Icons.tune_rounded, size: 19)),
+            const SizedBox(width: 4),
+            IconButton.filled(onPressed: _goToMyLocation, tooltip: 'شوێنی من', icon: const Icon(Icons.my_location_rounded, size: 19)),
+          ]),
+        ),
+      ),
+    );
+  }
+
   Widget _buildSelectedCard() {
     final shop = _selectedShop!;
     final route = _activeRoute;
@@ -1358,7 +1541,7 @@ class _ShopMapScreenState extends State<ShopMapScreen>
               const SizedBox(width: 11),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
-                  Flexible(child: Text(shop.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900))),
+                  Flexible(child: Text(shop.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 17, fontWeight: FontWeight.w900))),
                   if (shop.isVerified) const Padding(padding: EdgeInsetsDirectional.only(start: 5), child: Icon(Icons.verified_rounded, color: _mapGreen, size: 17)),
                   if (shop.isPinned) const Padding(padding: EdgeInsetsDirectional.only(start: 4), child: Icon(Icons.workspace_premium_rounded, color: Color(0xFFF59E0B), size: 17)),
                 ]),

@@ -73,7 +73,7 @@ class _VoiceSearchSheetState extends State<_VoiceSearchSheet>
   bool _listening = false;
   String _text = '';
   String? _error;
-  String _languageLabel = 'خۆکار';
+  String _languageLabel = 'کوردی';
   String? _localeId;
   List<LocaleName> _locales = const <LocaleName>[];
 
@@ -117,10 +117,21 @@ class _VoiceSearchSheetState extends State<_VoiceSearchSheet>
       );
       final locales = available ? await _speech.locales() : <LocaleName>[];
       if (!mounted) return;
+      final preferredLocale = available
+          ? _findLocale(['ku-IQ', 'ckb-IQ', 'ku', 'ckb']) ??
+              _findLocale(['ar-IQ', 'ar']) ??
+              _findLocale(['en-US', 'en-GB', 'en'])
+          : null;
       setState(() {
         _available = available;
         _locales = locales;
         _initializing = false;
+        _localeId = preferredLocale?.localeId;
+        _languageLabel = preferredLocale == null
+            ? 'خۆکار'
+            : ((preferredLocale.localeId.toLowerCase().startsWith('ku') || preferredLocale.localeId.toLowerCase().startsWith('ckb'))
+                ? 'کوردی'
+                : (preferredLocale.localeId.toLowerCase().startsWith('ar') ? 'عەرەبی' : 'English'));
         if (!available) _error = 'Voice Search پێویستی بە ڕێگەی Microphone و Speech Recognition هەیە؛ ئەگەر ڕەتت کردووە لە Settings چالاکی بکە.';
       });
       if (available) unawaited(_start());
@@ -261,7 +272,7 @@ class _VoiceSearchSheetState extends State<_VoiceSearchSheet>
                   tooltip: 'زمان',
                   onSelected: _chooseLanguage,
                   itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'auto', child: Text('خۆکار')),
+                    PopupMenuItem(value: 'auto', child: Text('خۆکار / بنەڕەتی')),
                     PopupMenuItem(value: 'ku', child: Text('کوردی')),
                     PopupMenuItem(value: 'ar', child: Text('عەرەبی')),
                     PopupMenuItem(value: 'en', child: Text('English')),
@@ -314,7 +325,7 @@ class _VoiceSearchSheetState extends State<_VoiceSearchSheet>
               ),
               const SizedBox(height: 14),
               Text(
-                _listening ? 'گوێ دەگرم…' : 'بۆ دووبارە دەستپێکردن کلیک بکە',
+                _listening ? 'گوێ دەگرم… بە زمانی هەڵبژێردراو' : 'بۆ دووبارە دەستپێکردن کلیک بکە',
                 style: TextStyle(
                   color: theme.colorScheme.onSurfaceVariant,
                   fontWeight: FontWeight.w800,
