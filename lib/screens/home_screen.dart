@@ -12,6 +12,7 @@ import '../services/shop_service.dart';
 import '../services/shop_distance_service.dart';
 import '../services/theme_service.dart';
 import '../widgets/shop_card.dart';
+import '../widgets/voice_search_sheet.dart';
 import 'favorites_screen.dart';
 import 'global_search_screen.dart';
 import 'module_list_screen.dart';
@@ -23,9 +24,15 @@ class HomeScreen extends StatefulWidget {
   const HomeScreen({
     super.key,
     this.onOpenMarket,
+    this.onOpenMap,
+    this.onOpenShops,
+    this.onOpenServices,
   });
 
   final VoidCallback? onOpenMarket;
+  final VoidCallback? onOpenMap;
+  final VoidCallback? onOpenShops;
+  final VoidCallback? onOpenServices;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -158,9 +165,9 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _openGlobalSearch() {
+  void _openGlobalSearch([String query = '']) {
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const GlobalSearchScreen()),
+      MaterialPageRoute(builder: (_) => GlobalSearchScreen(initialQuery: query)),
     );
   }
 
@@ -197,7 +204,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 20),
                 _buildSearch(),
                 const SizedBox(height: 14),
-                _buildToolsButton(),
+                _buildQuickActions(),
                 const SizedBox(height: 24),
                 _buildServicesSection(),
                 const SizedBox(height: 28),
@@ -228,9 +235,19 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'نزیک',
-                style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900),
+              const Row(
+                children: [
+                  Text(
+                    'NIZIK',
+                    textDirection: TextDirection.ltr,
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, letterSpacing: .6),
+                  ),
+                  SizedBox(width: 8),
+                  Text(
+                    'نزیک',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF059669)),
+                  ),
+                ],
               ),
               const SizedBox(height: 2),
               ValueListenableBuilder<NizikLocationPreference>(
@@ -311,7 +328,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-              Icon(Icons.arrow_back_ios_new_rounded, size: 14, color: theme.colorScheme.primary),
+              NizikVoiceButton(
+                compact: true,
+                onResult: (value) => _openGlobalSearch(value),
+              ),
             ],
           ),
         ),
@@ -319,59 +339,72 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildToolsButton() {
+  Widget _buildQuickActions() {
     final theme = Theme.of(context);
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(22),
-      child: InkWell(
-        onTap: _openTools,
-        borderRadius: BorderRadius.circular(22),
-        child: Ink(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                theme.colorScheme.secondaryContainer,
-                theme.colorScheme.primaryContainer,
-              ],
+    final actions = <({String label, IconData icon, VoidCallback onTap})>[
+      (label: 'نەخشە', icon: Icons.map_rounded, onTap: widget.onOpenMap ?? () {}),
+      (label: 'دووکان', icon: Icons.storefront_rounded, onTap: widget.onOpenShops ?? () {}),
+      (label: 'خزمەتگوزاری', icon: Icons.grid_view_rounded, onTap: widget.onOpenServices ?? _openAllServices),
+      (label: 'ئامراز', icon: Icons.handyman_rounded, onTap: _openTools),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+        boxShadow: const [
+          BoxShadow(color: Color(0x0F000000), blurRadius: 24, offset: Offset(0, 8)),
+        ],
+      ),
+      child: Row(
+        children: [
+          for (var i = 0; i < actions.length; i++) ...[
+            Expanded(
+              child: InkWell(
+                borderRadius: BorderRadius.circular(18),
+                onTap: actions[i].onTap,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 46,
+                        height: 46,
+                        decoration: BoxDecoration(
+                          color: i == 3
+                              ? theme.colorScheme.primary
+                              : theme.colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        child: Icon(
+                          actions[i].icon,
+                          color: i == 3
+                              ? theme.colorScheme.onPrimary
+                              : theme.colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 7),
+                      Text(
+                        actions[i].label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w900),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: theme.colorScheme.outlineVariant),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary,
-                  borderRadius: BorderRadius.circular(17),
-                ),
-                child: Icon(Icons.handyman_rounded, color: theme.colorScheme.onPrimary),
+            if (i != actions.length - 1)
+              SizedBox(
+                height: 48,
+                child: VerticalDivider(color: theme.colorScheme.outlineVariant, width: 4),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('ئامرازەکان', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 3),
-                    Text(
-                      _enabledToolCount > 0
-                          ? '$_enabledToolCount ئامرازی چالاک • هەژمارکەر، QR، Compass و زیاتر'
-                          : 'هەژمارکەر، QR، Compass و ئامرازە بەسوودەکان',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 10.5, height: 1.35),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.arrow_back_ios_new_rounded, size: 15, color: theme.colorScheme.primary),
-            ],
-          ),
-        ),
+          ],
+        ],
       ),
     );
   }

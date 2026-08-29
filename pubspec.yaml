@@ -22,6 +22,14 @@ dependencies:
   firebase_core: ^4.14.0
   firebase_messaging: ^16.6.0
   flutter_compass: ^0.8.1
+  speech_to_text: ^7.3.0
+  qr_flutter: ^4.1.0
+  timezone: ^0.10.1
+  intl: ^0.20.2
+  flutter_map_cache: ^2.1.0
+  dio_cache_interceptor: ^4.0.3
+  http_cache_file_store: ^2.0.0
+  path_provider: ^2.1.5
 
 dev_dependencies:
   flutter_test:

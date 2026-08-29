@@ -1,6 +1,8 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:timezone/data/latest.dart' as tz;
 
 import 'firebase_options.dart';
 import 'screens/location_setup_gate.dart';
@@ -16,6 +18,8 @@ import 'theme/nizik_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  tz.initializeTimeZones();
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
   DeepLinkService.instance.start();
 
@@ -51,6 +55,19 @@ class NizikApp extends StatelessWidget {
     return ValueListenableBuilder<ThemeMode>(
       valueListenable: ThemeService.instance.mode,
       builder: (context, mode, _) {
+        final dark = mode == ThemeMode.dark ||
+            (mode == ThemeMode.system &&
+                WidgetsBinding.instance.platformDispatcher.platformBrightness == Brightness.dark);
+        SystemChrome.setSystemUIOverlayStyle(
+          SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness: dark ? Brightness.light : Brightness.dark,
+            statusBarBrightness: dark ? Brightness.dark : Brightness.light,
+            systemNavigationBarColor: Colors.transparent,
+            systemNavigationBarIconBrightness: dark ? Brightness.light : Brightness.dark,
+            systemNavigationBarDividerColor: Colors.transparent,
+          ),
+        );
         return MaterialApp(
           navigatorKey: DeepLinkService.instance.navigatorKey,
           scaffoldMessengerKey: NotificationService.scaffoldMessengerKey,

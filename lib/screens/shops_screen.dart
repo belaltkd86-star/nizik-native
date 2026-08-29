@@ -7,6 +7,7 @@ import '../services/favorites_service.dart';
 import '../services/location_preference_service.dart';
 import '../services/shop_service.dart';
 import '../widgets/shop_card.dart';
+import '../widgets/voice_search_sheet.dart';
 import 'settings_screen.dart';
 import 'shop_category_screen.dart';
 import 'shop_detail_screen.dart';
@@ -311,9 +312,12 @@ class _ShopsScreenState extends State<ShopsScreen> {
       decoration: InputDecoration(
         hintText: 'گەڕان بە ناوی دووکان...',
         prefixIcon: const Icon(Icons.search_rounded),
-        suffixIcon: _searchController.text.isEmpty
-            ? null
-            : IconButton(
+        suffixIconConstraints: const BoxConstraints(minWidth: 48, maxWidth: 100),
+        suffixIcon: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_searchController.text.isNotEmpty)
+              IconButton(
                 onPressed: () {
                   _debounce?.cancel();
                   _searchController.clear();
@@ -325,6 +329,20 @@ class _ShopsScreenState extends State<ShopsScreen> {
                 },
                 icon: const Icon(Icons.close_rounded),
               ),
+            Padding(
+              padding: const EdgeInsetsDirectional.only(end: 6),
+              child: NizikVoiceButton(
+                compact: true,
+                onResult: (value) {
+                  _searchController.text = value;
+                  _searchController.selection = TextSelection.collapsed(offset: value.length);
+                  _onSearchChanged(value);
+                  _searchShops();
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

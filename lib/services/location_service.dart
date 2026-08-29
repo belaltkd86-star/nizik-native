@@ -24,9 +24,8 @@ class LocationService {
     }
 
     if (permission == LocationPermission.deniedForever) {
-      await Geolocator.openAppSettings();
       throw Exception(
-        'ڕێگەپێدانی شوێن داخراوە. لە Settings ـی ئامێرەکەت چالاکی بکە.',
+        'ڕێگەپێدانی شوێن بە هەمیشەیی ڕەتکراوەتەوە. لە دوگمەی Settings چالاکی بکە.',
       );
     }
 
@@ -88,14 +87,14 @@ class LocationService {
     return getCurrentPosition();
   }
 
-  // Foreground live GPS stream. A new position is emitted after
-  // roughly 3 metres of movement, so no manual refresh is needed.
-  static Stream<Position> watchPosition() async* {
+  // Foreground live GPS stream. High accuracy is reserved for the active
+  // map/navigation screen. Other screens can use balanced accuracy to save battery.
+  static Stream<Position> watchPosition({bool highAccuracy = true}) async* {
     await requestPermission();
 
-    const locationSettings = LocationSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: 3,
+    final locationSettings = LocationSettings(
+      accuracy: highAccuracy ? LocationAccuracy.bestForNavigation : LocationAccuracy.medium,
+      distanceFilter: highAccuracy ? 3 : 15,
     );
 
     yield* Geolocator.getPositionStream(

@@ -1,10 +1,21 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:timezone/timezone.dart' as tz;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:speech_to_text/speech_to_text.dart';
 
 import '../models/app_feature.dart';
 import '../services/app_config_service.dart';
@@ -17,14 +28,38 @@ class ToolsScreen extends StatefulWidget {
 }
 
 class _ToolsScreenState extends State<ToolsScreen> {
+  static const _pinnedKey = 'nizik_pinned_tools_v10';
+  final _search = TextEditingController();
   bool _loading = true;
   String? _error;
   List<AppFeature> _tools = const <AppFeature>[];
+  Set<String> _pinned = <String>{};
 
   @override
   void initState() {
     super.initState();
+    _loadPinned();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadPinned() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() => _pinned = (prefs.getStringList(_pinnedKey) ?? const <String>[]).toSet());
+  }
+
+  Future<void> _togglePin(String key) async {
+    final next = Set<String>.of(_pinned);
+    if (!next.add(key)) next.remove(key);
+    setState(() => _pinned = next);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_pinnedKey, next.toList()..sort());
   }
 
   Future<void> _load() async {
@@ -52,11 +87,26 @@ class _ToolsScreenState extends State<ToolsScreen> {
     }
   }
 
+  List<AppFeature> get _visibleTools {
+    final q = _search.text.trim().toLowerCase();
+    final result = _tools.where((feature) {
+      if (q.isEmpty) return true;
+      return '${feature.title} ${feature.subtitle} ${feature.key}'.toLowerCase().contains(q);
+    }).toList();
+    result.sort((a, b) {
+      final ap = _pinned.contains(a.key) ? 0 : 1;
+      final bp = _pinned.contains(b.key) ? 0 : 1;
+      if (ap != bp) return ap.compareTo(bp);
+      return a.sortOrder.compareTo(b.sortOrder);
+    });
+    return result;
+  }
+
   void _open(AppFeature feature) {
     final page = _toolPage(feature);
     if (page == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('ئامرازی «${feature.title}» هێشتا لەم وەشانەدا UI ـی تایبەتی نییە.')),
+        SnackBar(content: Text('ئامرازی «${feature.title}» هێشتا UI ـی تایبەتی نییە.')),
       );
       return;
     }
@@ -67,6 +117,10 @@ class _ToolsScreenState extends State<ToolsScreen> {
     switch (feature.key) {
       case 'discount_calculator':
         return DiscountCalculatorScreen(title: feature.title);
+      case 'percentage_calculator':
+        return PercentageCalculatorScreen(title: feature.title);
+      case 'gold_calculator':
+        return GoldCalculatorScreen(title: feature.title);
       case 'unit_converter':
         return UnitConverterScreen(title: feature.title);
       case 'age_calculator':
@@ -75,12 +129,28 @@ class _ToolsScreenState extends State<ToolsScreen> {
         return DateCalculatorScreen(title: feature.title);
       case 'qr_generator':
         return QrGeneratorScreen(title: feature.title);
+      case 'wifi_qr_generator':
+        return WifiQrGeneratorScreen(title: feature.title);
       case 'price_compare':
         return PriceCompareScreen(title: feature.title);
       case 'simple_reminder':
         return ReminderScreen(title: feature.title);
       case 'compass':
         return CompassScreen(title: feature.title);
+      case 'time_zone_converter':
+        return TimeZoneConverterScreen(title: feature.title);
+      case 'world_clock':
+        return WorldClockScreen(title: feature.title);
+      case 'random_picker':
+        return RandomPickerScreen(title: feature.title);
+      case 'digit_converter':
+        return DigitConverterScreen(title: feature.title);
+      case 'internet_speed_test':
+        return InternetSpeedTestScreen(title: feature.title);
+      case 'speedometer':
+        return SpeedometerScreen(title: feature.title);
+      case 'permission_manager':
+        return PermissionManagerScreen(title: feature.title);
       default:
         return null;
     }
@@ -88,16 +158,27 @@ class _ToolsScreenState extends State<ToolsScreen> {
 
   String _emojiFor(AppFeature feature) {
     final icon = feature.icon.trim();
-    if (icon.isNotEmpty && icon.runes.length <= 4) return icon;
+    final looksLikeEmoji = icon.runes.any((rune) => rune > 0x2000);
+    if (icon.isNotEmpty && looksLikeEmoji && icon.runes.length <= 6) return icon;
     const fallback = <String, String>{
       'discount_calculator': '🏷️',
+      'percentage_calculator': '%',
+      'gold_calculator': '🪙',
       'unit_converter': '📏',
       'age_calculator': '🎂',
       'date_calculator': '📅',
       'qr_generator': '▦',
+      'wifi_qr_generator': '📶',
       'price_compare': '⚖️',
       'simple_reminder': '⏰',
       'compass': '🧭',
+      'time_zone_converter': '🌐',
+      'world_clock': '🕘',
+      'random_picker': '🎲',
+      'digit_converter': '١٢٣',
+      'internet_speed_test': '⚡',
+      'speedometer': '🏎️',
+      'permission_manager': '🔐',
     };
     return fallback[feature.key] ?? '🧰';
   }
@@ -105,8 +186,11 @@ class _ToolsScreenState extends State<ToolsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final visible = _visibleTools;
+    final pinnedCount = _pinned.where((key) => _tools.any((t) => t.key == key)).length;
+
     return Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: ui.TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('ئامرازەکان', style: TextStyle(fontWeight: FontWeight.w900)),
@@ -118,29 +202,36 @@ class _ToolsScreenState extends State<ToolsScreen> {
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(18, 8, 18, 18),
+                padding: const EdgeInsets.fromLTRB(18, 8, 18, 12),
                 sliver: SliverToBoxAdapter(
                   child: Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
-                        colors: [Color(0xFF07563B), Color(0xFF2E7D32)],
+                        colors: [Color(0xFF064E3B), Color(0xFF059669)],
                         begin: Alignment.topRight,
                         end: Alignment.bottomLeft,
                       ),
-                      borderRadius: BorderRadius.circular(26),
+                      borderRadius: BorderRadius.circular(28),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF059669).withValues(alpha: .18),
+                          blurRadius: 28,
+                          offset: const Offset(0, 12),
+                        ),
+                      ],
                     ),
                     child: Row(
                       children: [
                         Container(
-                          width: 58,
-                          height: 58,
+                          width: 62,
+                          height: 62,
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.14),
-                            borderRadius: BorderRadius.circular(18),
+                            borderRadius: BorderRadius.circular(19),
                           ),
-                          child: const Icon(Icons.handyman_rounded, color: Colors.white, size: 30),
+                          child: const Icon(Icons.handyman_rounded, color: Colors.white, size: 32),
                         ),
                         const SizedBox(width: 14),
                         Expanded(
@@ -148,18 +239,37 @@ class _ToolsScreenState extends State<ToolsScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const Text(
-                                'ئامرازەکانی نزیک',
+                                'NIZIK Tools',
                                 style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900),
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                'ئامرازە چالاکەکان لە داتابەیس و Admin ـەوە کۆنتڕۆڵ دەکرێن.',
-                                style: TextStyle(color: Colors.white.withValues(alpha: 0.82), fontSize: 11.5, height: 1.45),
+                                'ئامرازە ڕۆژانە و زیرەکەکان • $pinnedCount پین کراو',
+                                style: TextStyle(color: Colors.white.withValues(alpha: 0.82), fontSize: 11.5),
                               ),
                             ],
                           ),
                         ),
                       ],
+                    ),
+                  ),
+                ),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
+                sliver: SliverToBoxAdapter(
+                  child: TextField(
+                    controller: _search,
+                    onChanged: (_) => setState(() {}),
+                    decoration: InputDecoration(
+                      hintText: 'گەڕان لە ئامرازەکان…',
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      suffixIcon: _search.text.isEmpty
+                          ? const Icon(Icons.push_pin_outlined, size: 19)
+                          : IconButton(
+                              onPressed: () { _search.clear(); setState(() {}); },
+                              icon: const Icon(Icons.close_rounded),
+                            ),
                     ),
                   ),
                 ),
@@ -185,7 +295,7 @@ class _ToolsScreenState extends State<ToolsScreen> {
                     ),
                   ),
                 )
-              else if (_tools.isEmpty)
+              else if (visible.isEmpty)
                 SliverFillRemaining(
                   hasScrollBody: false,
                   child: Center(
@@ -194,9 +304,9 @@ class _ToolsScreenState extends State<ToolsScreen> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.handyman_outlined, size: 56, color: theme.colorScheme.onSurfaceVariant),
+                          Icon(Icons.search_off_rounded, size: 56, color: theme.colorScheme.onSurfaceVariant),
                           const SizedBox(height: 12),
-                          const Text('هیچ ئامرازێکی چالاک نییە.', style: TextStyle(fontWeight: FontWeight.w900)),
+                          const Text('هیچ ئامرازێک نەدۆزرایەوە.', style: TextStyle(fontWeight: FontWeight.w900)),
                         ],
                       ),
                     ),
@@ -210,22 +320,27 @@ class _ToolsScreenState extends State<ToolsScreen> {
                       crossAxisCount: 2,
                       mainAxisSpacing: 12,
                       crossAxisSpacing: 12,
-                      childAspectRatio: 1.05,
+                      childAspectRatio: 1.02,
                     ),
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
-                        final tool = _tools[index];
+                        final tool = visible[index];
+                        final pinned = _pinned.contains(tool.key);
                         return Material(
                           color: theme.colorScheme.surface,
                           borderRadius: BorderRadius.circular(24),
                           clipBehavior: Clip.antiAlias,
                           child: InkWell(
                             onTap: () => _open(tool),
+                            onLongPress: () => _togglePin(tool.key),
                             child: Container(
                               padding: const EdgeInsets.all(15),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(24),
-                                border: Border.all(color: theme.colorScheme.outlineVariant),
+                                border: Border.all(
+                                  color: pinned ? theme.colorScheme.primary.withValues(alpha: .45) : theme.colorScheme.outlineVariant,
+                                  width: pinned ? 1.4 : 1,
+                                ),
                               ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -240,10 +355,18 @@ class _ToolsScreenState extends State<ToolsScreen> {
                                           color: theme.colorScheme.primaryContainer,
                                           borderRadius: BorderRadius.circular(16),
                                         ),
-                                        child: Text(_emojiFor(tool), style: const TextStyle(fontSize: 25)),
+                                        child: Text(_emojiFor(tool), style: const TextStyle(fontSize: 24)),
                                       ),
                                       const Spacer(),
-                                      Icon(Icons.arrow_back_ios_new_rounded, size: 14, color: theme.colorScheme.primary),
+                                      IconButton(
+                                        tooltip: pinned ? 'لابردنی پین' : 'پینکردن',
+                                        onPressed: () => _togglePin(tool.key),
+                                        icon: Icon(
+                                          pinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+                                          size: 20,
+                                          color: pinned ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
+                                        ),
+                                      ),
                                     ],
                                   ),
                                   const Spacer(),
@@ -266,7 +389,7 @@ class _ToolsScreenState extends State<ToolsScreen> {
                           ),
                         );
                       },
-                      childCount: _tools.length,
+                      childCount: visible.length,
                     ),
                   ),
                 ),
@@ -287,7 +410,7 @@ class _ToolScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: ui.TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
           title: Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
@@ -590,7 +713,6 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final url = _qrText.isEmpty ? '' : 'https://api.qrserver.com/v1/create-qr-code/?size=360x360&margin=14&data=${Uri.encodeComponent(_qrText)}';
     return _ToolScaffold(
       title: widget.title,
       icon: Icons.qr_code_2_rounded,
@@ -598,12 +720,12 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
         TextField(controller: _text, minLines: 2, maxLines: 5, decoration: const InputDecoration(labelText: 'دەق یان لینک', hintText: 'https://...')),
         const SizedBox(height: 12),
         SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: () => setState(() => _qrText = _text.text.trim()), icon: const Icon(Icons.qr_code_rounded), label: const Text('QR دروست بکە'))),
-        if (url.isNotEmpty) ...[
+        if (_qrText.isNotEmpty) ...[
           const SizedBox(height: 18),
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(22)),
-            child: Image.network(url, width: 250, height: 250, errorBuilder: (_, __, ___) => const SizedBox(height: 180, child: Center(child: Text('QR لۆد نەکرا. ئینتەرنێت بپشکنە.')))),
+            child: QrImageView(data: _qrText, size: 250, backgroundColor: Colors.white, errorCorrectionLevel: QrErrorCorrectLevel.M),
           ),
           const SizedBox(height: 10),
           OutlinedButton.icon(onPressed: () async { await Clipboard.setData(ClipboardData(text: _qrText)); if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('دەق کۆپی کرا ✓'))); }, icon: const Icon(Icons.copy_rounded), label: const Text('کۆپیکردنی دەق')),
@@ -774,6 +896,735 @@ class _ReminderScreenState extends State<ReminderScreen> {
   }
 }
 
+class PercentageCalculatorScreen extends StatefulWidget {
+  const PercentageCalculatorScreen({super.key, required this.title});
+  final String title;
+  @override
+  State<PercentageCalculatorScreen> createState() => _PercentageCalculatorScreenState();
+}
+
+class _PercentageCalculatorScreenState extends State<PercentageCalculatorScreen> {
+  final _value = TextEditingController();
+  final _percent = TextEditingController();
+  String _mode = 'of';
+  double? _result;
+
+  @override
+  void dispose() { _value.dispose(); _percent.dispose(); super.dispose(); }
+
+  void _calculate() {
+    final value = double.tryParse(_value.text.replaceAll(',', '.'));
+    final percent = double.tryParse(_percent.text.replaceAll(',', '.'));
+    if (value == null || percent == null) { setState(() => _result = null); return; }
+    setState(() {
+      if (_mode == 'add') _result = value + (value * percent / 100);
+      else if (_mode == 'subtract') _result = value - (value * percent / 100);
+      else _result = value * percent / 100;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => _ToolScaffold(
+    title: widget.title,
+    icon: Icons.percent_rounded,
+    child: Column(children: [
+      TextField(controller: _value, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'بڕی سەرەکی')),
+      const SizedBox(height: 10),
+      TextField(controller: _percent, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'ڕێژە', suffixText: '%')),
+      const SizedBox(height: 10),
+      SegmentedButton<String>(
+        segments: const [
+          ButtonSegment(value: 'of', label: Text('% ـی بڕ')),
+          ButtonSegment(value: 'add', label: Text('زیادکردن')),
+          ButtonSegment(value: 'subtract', label: Text('کەمکردن')),
+        ],
+        selected: {_mode},
+        onSelectionChanged: (v) => setState(() => _mode = v.first),
+      ),
+      const SizedBox(height: 14),
+      SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: _calculate, icon: const Icon(Icons.calculate_rounded), label: const Text('هەژمارکردن'))),
+      if (_result != null) ...[const SizedBox(height: 14), _resultCard(context, 'ئەنجام', _formatNumber(_result!), _mode == 'of' ? 'بڕی ڕێژە' : 'بڕی نوێ')],
+    ]),
+  );
+}
+
+class GoldCalculatorScreen extends StatefulWidget {
+  const GoldCalculatorScreen({super.key, required this.title});
+  final String title;
+  @override
+  State<GoldCalculatorScreen> createState() => _GoldCalculatorScreenState();
+}
+
+class _GoldCalculatorScreenState extends State<GoldCalculatorScreen> {
+  final _grams = TextEditingController();
+  final _price24 = TextEditingController();
+  int _karat = 21;
+  double? _result;
+  double? _pureGrams;
+
+  @override
+  void dispose() { _grams.dispose(); _price24.dispose(); super.dispose(); }
+
+  void _calculate() {
+    final grams = double.tryParse(_grams.text.replaceAll(',', '.'));
+    final price = double.tryParse(_price24.text.replaceAll(',', '.'));
+    if (grams == null || price == null || grams < 0 || price < 0) {
+      setState(() { _result = null; _pureGrams = null; });
+      return;
+    }
+    final purity = _karat / 24.0;
+    setState(() {
+      _pureGrams = grams * purity;
+      _result = grams * price * purity;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => _ToolScaffold(
+    title: widget.title,
+    icon: Icons.monetization_on_rounded,
+    child: Column(children: [
+      TextField(controller: _grams, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'کێشی زێڕ', suffixText: 'گرام')),
+      const SizedBox(height: 10),
+      DropdownButtonFormField<int>(
+        value: _karat,
+        decoration: const InputDecoration(labelText: 'عیار'),
+        items: const [24, 22, 21, 18, 14].map((k) => DropdownMenuItem(value: k, child: Text('$k عیار'))).toList(),
+        onChanged: (v) { if (v != null) setState(() => _karat = v); },
+      ),
+      const SizedBox(height: 10),
+      TextField(controller: _price24, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'نرخی 1 گرامی 24 عیار', suffixText: 'IQD')),
+      const SizedBox(height: 14),
+      SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: _calculate, icon: const Icon(Icons.calculate_rounded), label: const Text('هەژمارکردن'))),
+      if (_result != null) ...[
+        const SizedBox(height: 14),
+        _resultCard(context, 'نرخی خەمڵێنراو', '${_result!.toStringAsFixed(0)} IQD', 'زێڕی پاک: ${_pureGrams!.toStringAsFixed(3)} g'),
+        const SizedBox(height: 8),
+        Text('نرخەکە تۆ خۆت داخڵ دەکەیت؛ ئەم ئامرازە نرخێکی بازاڕی live پێشبینی ناکات.', textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 10.5)),
+      ],
+    ]),
+  );
+}
+
+const Map<String, String> _nizikZones = {
+  'هەولێر / سلێمانی': 'Asia/Baghdad',
+  'دوبەی': 'Asia/Dubai',
+  'ئیستانبوڵ': 'Europe/Istanbul',
+  'لندن': 'Europe/London',
+  'پاریس': 'Europe/Paris',
+  'بەرلین': 'Europe/Berlin',
+  'نیویۆرک': 'America/New_York',
+  'لۆس ئەنجلس': 'America/Los_Angeles',
+  'تۆکیۆ': 'Asia/Tokyo',
+  'سیدنی': 'Australia/Sydney',
+  'تۆرۆنتۆ': 'America/Toronto',
+  'ڕیاز': 'Asia/Riyadh',
+};
+
+class TimeZoneConverterScreen extends StatefulWidget {
+  const TimeZoneConverterScreen({super.key, required this.title});
+  final String title;
+  @override
+  State<TimeZoneConverterScreen> createState() => _TimeZoneConverterScreenState();
+}
+
+class _TimeZoneConverterScreenState extends State<TimeZoneConverterScreen> {
+  String _from = 'هەولێر / سلێمانی';
+  String _to = 'لندن';
+  DateTime _date = DateTime.now();
+  TimeOfDay _time = TimeOfDay.now();
+
+  tz.TZDateTime get _converted {
+    final source = tz.getLocation(_nizikZones[_from]!);
+    final target = tz.getLocation(_nizikZones[_to]!);
+    final sourceTime = tz.TZDateTime(source, _date.year, _date.month, _date.day, _time.hour, _time.minute);
+    return tz.TZDateTime.from(sourceTime, target);
+  }
+
+  Future<void> _pickDate() async {
+    final v = await showDatePicker(context: context, initialDate: _date, firstDate: DateTime(2000), lastDate: DateTime(2100));
+    if (v != null) setState(() => _date = v);
+  }
+
+  Future<void> _pickTime() async {
+    final v = await showTimePicker(context: context, initialTime: _time);
+    if (v != null) setState(() => _time = v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final result = _converted;
+    final fmt = DateFormat('yyyy/MM/dd  HH:mm');
+    return _ToolScaffold(
+      title: widget.title,
+      icon: Icons.public_rounded,
+      child: Column(children: [
+        DropdownButtonFormField<String>(value: _from, decoration: const InputDecoration(labelText: 'لە کاتی'), items: _nizikZones.keys.map((z) => DropdownMenuItem(value: z, child: Text(z))).toList(), onChanged: (v) { if (v != null) setState(() => _from = v); }),
+        const SizedBox(height: 10),
+        DropdownButtonFormField<String>(value: _to, decoration: const InputDecoration(labelText: 'بۆ کاتی'), items: _nizikZones.keys.map((z) => DropdownMenuItem(value: z, child: Text(z))).toList(), onChanged: (v) { if (v != null) setState(() => _to = v); }),
+        const SizedBox(height: 10),
+        Row(children: [
+          Expanded(child: OutlinedButton.icon(onPressed: _pickDate, icon: const Icon(Icons.event_rounded), label: Text(DateFormat('yyyy/MM/dd').format(_date)))),
+          const SizedBox(width: 8),
+          Expanded(child: OutlinedButton.icon(onPressed: _pickTime, icon: const Icon(Icons.schedule_rounded), label: Text(_time.format(context)))),
+        ]),
+        const SizedBox(height: 14),
+        _resultCard(context, _to, fmt.format(result), 'UTC ${result.timeZoneOffset.isNegative ? '' : '+'}${result.timeZoneOffset.inHours}'),
+      ]),
+    );
+  }
+}
+
+class WorldClockScreen extends StatefulWidget {
+  const WorldClockScreen({super.key, required this.title});
+  final String title;
+  @override
+  State<WorldClockScreen> createState() => _WorldClockScreenState();
+}
+
+class _WorldClockScreenState extends State<WorldClockScreen> {
+  Timer? _timer;
+  @override
+  void initState() { super.initState(); _timer = Timer.periodic(const Duration(seconds: 1), (_) { if (mounted) setState(() {}); }); }
+  @override
+  void dispose() { _timer?.cancel(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return _ToolScaffold(
+      title: widget.title,
+      icon: Icons.language_rounded,
+      child: Column(
+        children: _nizikZones.entries.map((entry) {
+          final now = tz.TZDateTime.now(tz.getLocation(entry.value));
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 9),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
+              decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(18)),
+              child: Row(children: [
+                Icon(Icons.access_time_filled_rounded, color: theme.colorScheme.primary),
+                const SizedBox(width: 10),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(entry.key, style: const TextStyle(fontWeight: FontWeight.w900)), Text(DateFormat('yyyy/MM/dd').format(now), style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 10.5))])),
+                Text(DateFormat('HH:mm:ss').format(now), textDirection: ui.TextDirection.ltr, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+              ]),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+class RandomPickerScreen extends StatefulWidget {
+  const RandomPickerScreen({super.key, required this.title});
+  final String title;
+  @override
+  State<RandomPickerScreen> createState() => _RandomPickerScreenState();
+}
+
+class _RandomPickerScreenState extends State<RandomPickerScreen> {
+  final _items = TextEditingController();
+  String? _picked;
+  @override
+  void dispose() { _items.dispose(); super.dispose(); }
+
+  void _pick() {
+    final items = _items.text.split(RegExp(r'[\n,،;]+')).map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    if (items.isEmpty) { setState(() => _picked = null); return; }
+    setState(() => _picked = items[math.Random.secure().nextInt(items.length)]);
+    HapticFeedback.mediumImpact();
+  }
+
+  @override
+  Widget build(BuildContext context) => _ToolScaffold(
+    title: widget.title,
+    icon: Icons.casino_rounded,
+    child: Column(children: [
+      TextField(controller: _items, minLines: 6, maxLines: 12, decoration: const InputDecoration(labelText: 'ناو یان هەڵبژاردەکان', hintText: 'هەر هەڵبژاردەیەک لە هێڵێکدا بنووسە')),
+      const SizedBox(height: 12),
+      SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: _pick, icon: const Icon(Icons.casino_rounded), label: const Text('هەڵبژێرە'))),
+      if (_picked != null) ...[const SizedBox(height: 14), _resultCard(context, 'هەڵبژێردرا', _picked!, 'هەڵبژاردنی هەڕەمەکی')],
+    ]),
+  );
+}
+
+class WifiQrGeneratorScreen extends StatefulWidget {
+  const WifiQrGeneratorScreen({super.key, required this.title});
+  final String title;
+  @override
+  State<WifiQrGeneratorScreen> createState() => _WifiQrGeneratorScreenState();
+}
+
+class _WifiQrGeneratorScreenState extends State<WifiQrGeneratorScreen> {
+  final _ssid = TextEditingController();
+  final _password = TextEditingController();
+  String _security = 'WPA';
+  bool _hidden = false;
+  String _data = '';
+  @override
+  void dispose() { _ssid.dispose(); _password.dispose(); super.dispose(); }
+
+  String _escape(String value) => value.replaceAll('\\', r'\\').replaceAll(';', r'\;').replaceAll(',', r'\,').replaceAll(':', r'\:').replaceAll('"', r'\"');
+  void _generate() {
+    final ssid = _ssid.text.trim();
+    if (ssid.isEmpty) return;
+    final password = _password.text;
+    setState(() => _data = 'WIFI:T:${_security == 'nopass' ? 'nopass' : _security};S:${_escape(ssid)};P:${_security == 'nopass' ? '' : _escape(password)};H:${_hidden ? 'true' : 'false'};;');
+  }
+
+  @override
+  Widget build(BuildContext context) => _ToolScaffold(
+    title: widget.title,
+    icon: Icons.wifi_rounded,
+    child: Column(children: [
+      TextField(controller: _ssid, decoration: const InputDecoration(labelText: 'ناوی Wi‑Fi (SSID)')),
+      const SizedBox(height: 10),
+      TextField(controller: _password, obscureText: true, decoration: const InputDecoration(labelText: 'Password')),
+      const SizedBox(height: 10),
+      DropdownButtonFormField<String>(value: _security, decoration: const InputDecoration(labelText: 'Security'), items: const [DropdownMenuItem(value: 'WPA', child: Text('WPA/WPA2/WPA3')), DropdownMenuItem(value: 'WEP', child: Text('WEP')), DropdownMenuItem(value: 'nopass', child: Text('بێ password'))], onChanged: (v) { if (v != null) setState(() => _security = v); }),
+      SwitchListTile.adaptive(contentPadding: EdgeInsets.zero, title: const Text('Hidden network'), value: _hidden, onChanged: (v) => setState(() => _hidden = v)),
+      SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: _generate, icon: const Icon(Icons.qr_code_rounded), label: const Text('QR دروست بکە'))),
+      if (_data.isNotEmpty) ...[
+        const SizedBox(height: 16),
+        Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(22)), child: QrImageView(data: _data, size: 250, backgroundColor: Colors.white, errorCorrectionLevel: QrErrorCorrectLevel.Q)),
+        const SizedBox(height: 8),
+        const Text('QR ـەکە لە ناو مۆبایلێکی تر scan بکە بۆ پەیوەستبوون بە Wi‑Fi.', textAlign: TextAlign.center),
+      ],
+    ]),
+  );
+}
+
+class DigitConverterScreen extends StatefulWidget {
+  const DigitConverterScreen({super.key, required this.title});
+  final String title;
+  @override
+  State<DigitConverterScreen> createState() => _DigitConverterScreenState();
+}
+
+class _DigitConverterScreenState extends State<DigitConverterScreen> {
+  final _text = TextEditingController();
+  String _mode = 'latin';
+  String _result = '';
+  @override
+  void dispose() { _text.dispose(); super.dispose(); }
+
+  static const _latin = '0123456789';
+  static const _arabic = '٠١٢٣٤٥٦٧٨٩';
+  static const _kurdish = '۰۱۲۳۴۵۶۷۸۹';
+
+  void _convert() {
+    final target = _mode == 'latin' ? _latin : (_mode == 'arabic' ? _arabic : _kurdish);
+    final buffer = StringBuffer();
+    for (final rune in _text.text.runes) {
+      final ch = String.fromCharCode(rune);
+      var idx = _latin.indexOf(ch);
+      if (idx < 0) idx = _arabic.indexOf(ch);
+      if (idx < 0) idx = _kurdish.indexOf(ch);
+      buffer.write(idx >= 0 ? target[idx] : ch);
+    }
+    setState(() => _result = buffer.toString());
+  }
+
+  @override
+  Widget build(BuildContext context) => _ToolScaffold(
+    title: widget.title,
+    icon: Icons.pin_rounded,
+    child: Column(children: [
+      TextField(controller: _text, minLines: 3, maxLines: 8, decoration: const InputDecoration(labelText: 'دەق یان ژمارە')),
+      const SizedBox(height: 10),
+      SegmentedButton<String>(segments: const [ButtonSegment(value: 'latin', label: Text('123')), ButtonSegment(value: 'arabic', label: Text('١٢٣')), ButtonSegment(value: 'kurdish', label: Text('۱۲۳'))], selected: {_mode}, onSelectionChanged: (v) => setState(() => _mode = v.first)),
+      const SizedBox(height: 12),
+      SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: _convert, icon: const Icon(Icons.swap_horiz_rounded), label: const Text('گۆڕین'))),
+      if (_result.isNotEmpty) ...[
+        const SizedBox(height: 14),
+        _resultCard(context, 'ئەنجام', _result, ''),
+        TextButton.icon(onPressed: () => Clipboard.setData(ClipboardData(text: _result)), icon: const Icon(Icons.copy_rounded), label: const Text('کۆپی')),
+      ],
+    ]),
+  );
+}
+
+class InternetSpeedTestScreen extends StatefulWidget {
+  const InternetSpeedTestScreen({super.key, required this.title});
+  final String title;
+  @override
+  State<InternetSpeedTestScreen> createState() => _InternetSpeedTestScreenState();
+}
+
+class _InternetSpeedTestScreenState extends State<InternetSpeedTestScreen> {
+  bool _testing = false;
+  double? _pingMs;
+  double? _downloadMbps;
+  double? _uploadMbps;
+  String _phase = 'ئامادە';
+  String? _error;
+
+  Future<void> _run() async {
+    if (_testing) return;
+    setState(() { _testing = true; _error = null; _pingMs = null; _downloadMbps = null; _uploadMbps = null; _phase = 'Ping…'; });
+    try {
+      final pingWatch = Stopwatch()..start();
+      final pingResponse = await http.get(Uri.parse('https://speed.cloudflare.com/__down?bytes=1024')).timeout(const Duration(seconds: 10));
+      pingWatch.stop();
+      if (pingResponse.statusCode < 200 || pingResponse.statusCode >= 400) throw Exception('Ping failed');
+      if (mounted) setState(() { _pingMs = pingWatch.elapsedMicroseconds / 1000; _phase = 'Download…'; });
+
+      const bytes = 5 * 1024 * 1024;
+      final downWatch = Stopwatch()..start();
+      final down = await http.get(Uri.parse('https://speed.cloudflare.com/__down?bytes=$bytes')).timeout(const Duration(seconds: 30));
+      downWatch.stop();
+      if (down.statusCode < 200 || down.statusCode >= 400) throw Exception('Download failed');
+      final downMbps = (down.bodyBytes.length * 8) / downWatch.elapsedMicroseconds;
+      if (mounted) setState(() { _downloadMbps = downMbps; _phase = 'Upload…'; });
+
+      final payload = Uint8List(1024 * 1024);
+      final upWatch = Stopwatch()..start();
+      final up = await http.post(Uri.parse('https://speed.cloudflare.com/__up'), body: payload).timeout(const Duration(seconds: 30));
+      upWatch.stop();
+      if (up.statusCode < 200 || up.statusCode >= 500) throw Exception('Upload failed');
+      final upMbps = (payload.length * 8) / upWatch.elapsedMicroseconds;
+      if (mounted) setState(() { _uploadMbps = upMbps; _phase = 'تەواو'; });
+    } catch (_) {
+      if (mounted) setState(() { _error = 'Speed Test تەواو نەبوو. پەیوەندی ئینتەرنێت بپشکنە و دووبارە هەوڵ بدە.'; _phase = 'هەڵە'; });
+    } finally {
+      if (mounted) setState(() => _testing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return _ToolScaffold(
+      title: widget.title,
+      icon: Icons.speed_rounded,
+      child: Column(children: [
+        Container(
+          width: 210,
+          height: 210,
+          decoration: BoxDecoration(shape: BoxShape.circle, color: theme.colorScheme.primaryContainer),
+          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(Icons.network_check_rounded, size: 44, color: theme.colorScheme.primary),
+            const SizedBox(height: 8),
+            Text(_downloadMbps == null ? '--' : _downloadMbps!.toStringAsFixed(1), style: const TextStyle(fontSize: 38, fontWeight: FontWeight.w900)),
+            const Text('Mbps Download'),
+          ]),
+        ),
+        const SizedBox(height: 16),
+        Row(children: [
+          Expanded(child: _miniMetric(context, 'Ping', _pingMs == null ? '--' : '${_pingMs!.toStringAsFixed(0)} ms')),
+          const SizedBox(width: 8),
+          Expanded(child: _miniMetric(context, 'Upload', _uploadMbps == null ? '--' : '${_uploadMbps!.toStringAsFixed(1)} Mbps')),
+        ]),
+        const SizedBox(height: 12),
+        if (_testing) ...[LinearProgressIndicator(borderRadius: BorderRadius.circular(99)), const SizedBox(height: 8)],
+        Text(_phase, style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontWeight: FontWeight.w800)),
+        if (_error != null) ...[const SizedBox(height: 8), Text(_error!, textAlign: TextAlign.center, style: TextStyle(color: theme.colorScheme.error, fontSize: 11))],
+        const SizedBox(height: 14),
+        SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: _testing ? null : _run, icon: const Icon(Icons.bolt_rounded), label: const Text('دەستپێکردنی Speed Test'))),
+      ]),
+    );
+  }
+}
+
+Widget _miniMetric(BuildContext context, String label, String value) {
+  final theme = Theme.of(context);
+  return Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(18)), child: Column(children: [Text(label, style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 10)), const SizedBox(height: 4), Text(value, textDirection: ui.TextDirection.ltr, style: const TextStyle(fontWeight: FontWeight.w900))]));
+}
+
+class SpeedometerScreen extends StatefulWidget {
+  const SpeedometerScreen({super.key, required this.title});
+  final String title;
+  @override
+  State<SpeedometerScreen> createState() => _SpeedometerScreenState();
+}
+
+class _SpeedometerScreenState extends State<SpeedometerScreen> {
+  StreamSubscription<Position>? _subscription;
+  double _speedKmh = 0;
+  double _maxKmh = 0;
+  double _sumKmh = 0;
+  int _samples = 0;
+  bool _running = false;
+  String? _error;
+
+  double get _average => _samples == 0 ? 0 : _sumKmh / _samples;
+
+  Future<void> _start() async {
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
+    if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+      setState(() => _error = 'ڕێگەی Location پێویستە بۆ Speedometer.');
+      return;
+    }
+    if (!await Geolocator.isLocationServiceEnabled()) {
+      setState(() => _error = 'Location Service داخراوە.');
+      return;
+    }
+    setState(() { _running = true; _error = null; });
+    await _subscription?.cancel();
+    _subscription = Geolocator.getPositionStream(locationSettings: const LocationSettings(accuracy: LocationAccuracy.bestForNavigation, distanceFilter: 1)).listen((position) {
+      final kmh = math.max(0, position.speed) * 3.6;
+      if (!mounted) return;
+      setState(() {
+        _speedKmh = kmh;
+        _maxKmh = math.max(_maxKmh, kmh);
+        if (kmh < 350) { _sumKmh += kmh; _samples++; }
+      });
+    }, onError: (_) { if (mounted) setState(() { _running = false; _error = 'GPS داتا نەدۆزرایەوە.'; }); });
+  }
+
+  Future<void> _stop() async { await _subscription?.cancel(); _subscription = null; if (mounted) setState(() { _running = false; _speedKmh = 0; }); }
+  void _reset() => setState(() { _maxKmh = 0; _sumKmh = 0; _samples = 0; });
+
+  @override
+  void dispose() { _subscription?.cancel(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return _ToolScaffold(
+      title: widget.title,
+      icon: Icons.speed_rounded,
+      child: Column(children: [
+        Container(
+          width: 240,
+          height: 240,
+          decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: theme.colorScheme.primary, width: 8), color: theme.colorScheme.primaryContainer),
+          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Text(_speedKmh.toStringAsFixed(0), style: const TextStyle(fontSize: 62, fontWeight: FontWeight.w900)), const Text('km/h', style: TextStyle(fontWeight: FontWeight.w800))]),
+        ),
+        const SizedBox(height: 16),
+        Row(children: [Expanded(child: _miniMetric(context, 'Max', '${_maxKmh.toStringAsFixed(1)} km/h')), const SizedBox(width: 8), Expanded(child: _miniMetric(context, 'Average', '${_average.toStringAsFixed(1)} km/h'))]),
+        if (_error != null) ...[const SizedBox(height: 10), Text(_error!, textAlign: TextAlign.center, style: TextStyle(color: theme.colorScheme.error))],
+        const SizedBox(height: 14),
+        Row(children: [Expanded(child: FilledButton.icon(onPressed: _running ? _stop : _start, icon: Icon(_running ? Icons.stop_rounded : Icons.play_arrow_rounded), label: Text(_running ? 'وەستاندن' : 'دەستپێکردن'))), const SizedBox(width: 8), IconButton.filledTonal(onPressed: _reset, icon: const Icon(Icons.restart_alt_rounded))]),
+      ]),
+    );
+  }
+}
+
+class PermissionManagerScreen extends StatefulWidget {
+  const PermissionManagerScreen({super.key, required this.title});
+  final String title;
+  @override
+  State<PermissionManagerScreen> createState() => _PermissionManagerScreenState();
+}
+
+class _PermissionManagerScreenState extends State<PermissionManagerScreen> {
+  bool _loading = true;
+  String _location = '-';
+  String _voice = '-';
+  String _notifications = '-';
+  bool _locationGranted = false;
+  bool _voiceGranted = false;
+  bool _notificationsGranted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    if (mounted) setState(() => _loading = true);
+
+    var locationLabel = 'نەناسراو';
+    var locationGranted = false;
+    try {
+      final permission = await Geolocator.checkPermission();
+      locationGranted = permission == LocationPermission.always ||
+          permission == LocationPermission.whileInUse;
+      locationLabel = switch (permission) {
+        LocationPermission.always => 'ڕێگەپێدراو • Always',
+        LocationPermission.whileInUse => 'ڕێگەپێدراو • While in use',
+        LocationPermission.deniedForever => 'بە هەمیشەیی ڕەتکراوە',
+        LocationPermission.denied => 'ڕێگەپێنەدراو',
+        _ => 'نەناسراو',
+      };
+    } catch (_) {}
+
+    var voiceLabel = 'نەناسراو';
+    var voiceGranted = false;
+    try {
+      voiceGranted = await SpeechToText().hasPermission;
+      voiceLabel = voiceGranted ? 'ڕێگەپێدراو' : 'ڕێگەپێنەدراو';
+    } catch (_) {}
+
+    var notificationLabel = 'نەناسراو';
+    var notificationGranted = false;
+    try {
+      final settings = await FirebaseMessaging.instance.getNotificationSettings();
+      notificationGranted = settings.authorizationStatus == AuthorizationStatus.authorized ||
+          settings.authorizationStatus == AuthorizationStatus.provisional;
+      notificationLabel = switch (settings.authorizationStatus) {
+        AuthorizationStatus.authorized => 'ڕێگەپێدراو',
+        AuthorizationStatus.provisional => 'کاتی / Provisional',
+        AuthorizationStatus.denied => 'ڕێگەپێنەدراو',
+        AuthorizationStatus.deniedPermanently => 'بە هەمیشەیی ڕێگەپێنەدراو',
+        AuthorizationStatus.notDetermined => 'هێشتا داوا نەکراوە',
+      };
+    } catch (_) {}
+
+    if (!mounted) return;
+    setState(() {
+      _location = locationLabel;
+      _locationGranted = locationGranted;
+      _voice = voiceLabel;
+      _voiceGranted = voiceGranted;
+      _notifications = notificationLabel;
+      _notificationsGranted = notificationGranted;
+      _loading = false;
+    });
+  }
+
+  Future<void> _requestLocation() async {
+    try {
+      await Geolocator.requestPermission();
+    } finally {
+      await _refresh();
+    }
+  }
+
+  Future<void> _requestVoice() async {
+    try {
+      await SpeechToText().initialize();
+    } finally {
+      await _refresh();
+    }
+  }
+
+  Future<void> _requestNotifications() async {
+    try {
+      await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+    } finally {
+      await _refresh();
+    }
+  }
+
+  Widget _tile(
+    BuildContext context, {
+    required String title,
+    required String status,
+    required IconData icon,
+    required bool granted,
+    required Future<void> Function() onRequest,
+  }) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: granted
+                  ? theme.colorScheme.primaryContainer
+                  : theme.colorScheme.errorContainer,
+              child: Icon(
+                icon,
+                color: granted
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.error,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+                  Text(
+                    status,
+                    style: TextStyle(
+                      color: granted
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.onSurfaceVariant,
+                      fontSize: 10.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (!granted)
+              TextButton(onPressed: onRequest, child: const Text('داواکردن')),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return _ToolScaffold(
+      title: widget.title,
+      icon: Icons.admin_panel_settings_rounded,
+      child: Column(
+        children: [
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.all(30),
+              child: CircularProgressIndicator(),
+            )
+          else ...[
+            _tile(
+              context,
+              title: 'شوێن (Location)',
+              status: _location,
+              icon: Icons.location_on_rounded,
+              granted: _locationGranted,
+              onRequest: _requestLocation,
+            ),
+            _tile(
+              context,
+              title: 'دەنگ (Microphone / Speech)',
+              status: _voice,
+              icon: Icons.mic_rounded,
+              granted: _voiceGranted,
+              onRequest: _requestVoice,
+            ),
+            _tile(
+              context,
+              title: 'ئاگادارکردنەوە (Notifications)',
+              status: _notifications,
+              icon: Icons.notifications_rounded,
+              granted: _notificationsGranted,
+              onRequest: _requestNotifications,
+            ),
+          ],
+          const SizedBox(height: 6),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: Geolocator.openAppSettings,
+              icon: const Icon(Icons.settings_rounded),
+              label: const Text('کردنەوەی Settings ـی بەرنامە'),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'NIZIK permission بە زۆرەملێیی ناگۆڕێت؛ بڕیاری کۆتایی لە Settings ـی سیستەمە.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: theme.colorScheme.onSurfaceVariant,
+              fontSize: 10.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class CompassScreen extends StatelessWidget {
   const CompassScreen({super.key, required this.title});
   final String title;
@@ -786,7 +1637,7 @@ class CompassScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: ui.TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(title: Text(title, style: const TextStyle(fontWeight: FontWeight.w900)), surfaceTintColor: Colors.transparent),
         body: StreamBuilder<CompassEvent>(

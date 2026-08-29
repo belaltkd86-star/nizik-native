@@ -30,7 +30,12 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
-      HomeScreen(onOpenMarket: _openMarket),
+      HomeScreen(
+        onOpenMarket: _openMarket,
+        onOpenMap: () => _goTo(1),
+        onOpenShops: () => _goTo(2),
+        onOpenServices: () => _goTo(3),
+      ),
       ShopMapScreen(autoLocate: _index == 1),
       const ShopsScreen(),
       const ServicesScreen(),

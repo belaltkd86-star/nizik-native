@@ -8,6 +8,7 @@ class ReportSheet {
     required String targetType,
     int? targetId,
     String? targetSlug,
+    List<String>? reasons,
   }) async {
     final reason = await showModalBottomSheet<String>(
       context: context,
@@ -29,14 +30,14 @@ class ReportSheet {
                   ),
                 ),
                 const SizedBox(height: 12),
-                ...const [
+                ...(reasons ?? const [
                   'زانیاری هەڵەیە',
                   'فێڵ یان گوماناویە',
                   'ناوەڕۆکی ناشیاوە',
                   'ژمارە یان لینک کار ناکات',
                   'ئایتم فرۆشراوە',
                   'هۆکاری تر',
-                ].map(
+                ]).map(
                   (item) => ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.flag_outlined),

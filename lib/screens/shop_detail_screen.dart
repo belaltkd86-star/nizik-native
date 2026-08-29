@@ -1,5 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/shop.dart';
@@ -90,6 +92,100 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
       MaterialPageRoute(
         builder: (_) => ShopMapScreen(
           focusShop: shop,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showShopQr(Shop shop) async {
+    final deepLink = NizikShareService.shopLink(shop.slug);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(22, 4, 22, 26),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'QR ـی دووکان',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                shop.name,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Theme.of(sheetContext).colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 18),
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: QrImageView(
+                  data: deepLink,
+                  size: 230,
+                  version: QrVersions.auto,
+                  backgroundColor: Colors.white,
+                  eyeStyle: const QrEyeStyle(
+                    eyeShape: QrEyeShape.square,
+                    color: Color(0xFF047857),
+                  ),
+                  dataModuleStyle: const QrDataModuleStyle(
+                    dataModuleShape: QrDataModuleShape.square,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'QR ـەکە لینکێکی public slug بەکاردەهێنێت؛ ID ـی ناوخۆی Database تێدا نییە.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 11.5),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        await Clipboard.setData(ClipboardData(text: deepLink));
+                        if (!sheetContext.mounted) return;
+                        ScaffoldMessenger.of(sheetContext).showSnackBar(
+                          const SnackBar(content: Text('لینک کۆپی کرا.')),
+                        );
+                      },
+                      icon: const Icon(Icons.copy_rounded),
+                      label: const Text('کۆپیکردنی لینک'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () => NizikShareService.show(
+                        sheetContext,
+                        title: shop.name,
+                        link: deepLink,
+                      ),
+                      icon: const Icon(Icons.ios_share_rounded),
+                      label: const Text('هاوبەشکردن'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -414,6 +510,14 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> {
                           ),
                           icon: const Icon(
                             Icons.ios_share_rounded,
+                            color: Colors.white,
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'QR ـی دووکان',
+                          onPressed: () => _showShopQr(shop),
+                          icon: const Icon(
+                            Icons.qr_code_2_rounded,
                             color: Colors.white,
                           ),
                         ),

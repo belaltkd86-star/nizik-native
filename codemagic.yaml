@@ -37,10 +37,10 @@ workflows:
           mkdir -p build/ios/unsigned_ipa/Payload
           cp -R build/ios/iphoneos/Runner.app build/ios/unsigned_ipa/Payload/
           cd build/ios/unsigned_ipa
-          zip -qry Nizik-V9-unsigned.ipa Payload
+          zip -qry Nizik-V10-PRO-unsigned.ipa Payload
 
     artifacts:
-      - build/ios/unsigned_ipa/Nizik-V9-unsigned.ipa
+      - build/ios/unsigned_ipa/Nizik-V10-PRO-unsigned.ipa
       - build/ios/iphoneos/Runner.app
       - /tmp/xcodebuild_logs/*.log
 

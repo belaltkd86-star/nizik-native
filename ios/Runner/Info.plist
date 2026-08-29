@@ -90,5 +90,9 @@
                 <false/>
                 <key>NSLocationWhenInUseUsageDescription</key>
                 <string>ئەپلیکەیشنی نزیک پێویستی بە شوێنی تۆ هەیە بۆ دۆزینەوەی دووکان و خزمەتگوزارییە نزیکەکان.</string>
+                <key>NSMicrophoneUsageDescription</key>
+                <string>نزیک مایکرۆفۆن بەکاردەهێنێت تەنها کاتێک Voice Search چالاک دەکەیت.</string>
+                <key>NSSpeechRecognitionUsageDescription</key>
+                <string>نزیک دەنگەکەت دەگۆڕێت بۆ دەق بۆ گەڕان بە کوردی، عەرەبی و ئینگلیزی.</string>
         </dict>
 </plist>
